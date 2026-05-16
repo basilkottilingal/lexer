@@ -122,11 +122,13 @@ rgx_dfa_tree ( DState * root, Stack ** Qptr ) {
                                    /* iterate each nfa of dfa cache */
       dfa = stack[n-1].d;
       c = s->id;
-      if (c >= 256 || dfa->next[c] ) continue;
+      if (c >= 256 || dfa->next[c])
+        continue;
 
       if (states_transition (dfa->list, list, buff, c) < 0) {
-          RTN (RGXERR);
+        RTN (RGXERR);
       }
+
       dfa->next[c] = state (list, bits, &exists);
       if (!exists) {     /* 'dfa' was recently pushed to hash table */
         dfa = dfa->next[c];
@@ -737,7 +739,7 @@ int dfa_tables (int *** tables, int ** tsize) {
   printf ("\nstats :"
     "\n  no: of states   %3d"
     "\n  no: of tokens   %3d"
-    "\n  no: of eq class %3d (excluding EOF, EOL, BOL, BOL)"
+    "\n  no: of eq class %3d (excluding EOF, EOL, BOL, EOB)"
     "\n  table sizes     %3d (check[], next[])"
     "\n", nstates, num_actions, nclass - BCLASSES, len[0] ); 
   #endif

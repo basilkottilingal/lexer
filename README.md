@@ -25,10 +25,11 @@ int lxr_lex ();
 
 # Tokenizer or Lexer reader
 
-  Creates a lexer generator header from a .lex file. Input file supports
-  same format as of flex's input file.
+  Creates a lexer generator header from a lexer grammar file. 
+  The grammar file format is the same as `Flex`'s input file format.
 
-  Convert a lexer grammar file to lexer source file as follows.
+  Convert a lexer grammar file to lexer source file as follows, given
+  `make` and c99 supporting `gcc` or `clang` compiler are installed.
 
 ```bash
 git clone git@github.com:basilkottilingal/lexer.git
