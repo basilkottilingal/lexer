@@ -152,7 +152,6 @@ Proceedings of the 3rd Annual ACM Symposium on Theory of Computing (STOC), 1971,
 
 ## ToDo
 
-  1. Remove non-reached states
-  2. YYSTYPE not tested for return type other than `int`
-  3. OR operator ('|') for multiple patterns with same action
-  4. garbage collection : deallocate () in case memory is constrained
+  1. YYSTYPE not tested for return type other than `int`
+  2. OR operator ('|') for multiple patterns with same action
+  3. garbage collection : deallocate () in case memory is constrained

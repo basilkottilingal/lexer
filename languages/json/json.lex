@@ -1,23 +1,58 @@
+%{
+
+#define YYSTYPE  int json_tokenize ()
+#define JSON_LEX_TESTING
+
+/*
+.. refer to the combined lexer + grammar rules of json at
+.. https://www.json.org/json-en.html 
+.. https://www.crockford.com/mckeeman.html
+*/
+typedef enum
+{
+  /*
+  .. don't use TOKEN ID < 256 as there is a chance it might
+  .. clash with ascii characters
+  */
+  J_TRUE      = 257,
+  J_FALSE,
+  J_NULL,
+  J_STRING,
+  J_WHITESPACE,
+  J_NUMBER,
+} JSON_TOKEN;
+
+%}
+
 %%
 
-true                                            { return 1; }
-false                                           { return 2; }
-null                                            { return 3; }
-\"([^"\\]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})*\"   { return 4; }
-\[                                              { return 5; }
-\]                                              { return 6; }
-:                                               { return 7;}
-,                                               { return 8; }
-\{                                              { return 9; }
-\}                                              { return 10; }
--?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?  { return 11; }
-[ \t\v\n\f]+                                    { /* skip */ }
+true                                            { return J_TRUE; }
+false                                           { return J_FALSE; }
+null                                            { return J_NULL; }
+\"([^"\\\x00-\x1F]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})*\"   { return J_STRING; }
+\[                                              { return '['; }
+\]                                              { return ']'; }
+:                                               { return ':';}
+,                                               { return ','; }
+\{                                              { return '{'; }
+\}                                              { return '}'; }
+-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?  { return J_NUMBER; }
+[ \t\v\n\f]+                                    { /* skip white spaces*/ }
 .                                               { fprintf (stderr, "\nerror : %s", yytext); }
 
 %%
 
-int main () {
-  while ( lxr_lex() ) {
+#ifdef JSON_LEX_TESTING
+int main (int argc, char ** argv)
+{
+  /* user may pass a filename as an additional arguement or use stdin */
+  if (argc >= 2)
+    lxr_source (argv [1]);
+  /* by default it is stdin */
+
+  while ( json_tokenize () ) {
     printf ("\n%s", yytext);
-  }   
+  }
+  lxr_clean (); 
 }
+#endif

@@ -1,0 +1,62 @@
+{
+  "literals": { "true": true, "false": false, "null": null },
+
+  "numbers": {
+    "zero": 0,
+    "negative_zero": -0,
+    "int": 42,
+    "negative_int": -17,
+    "fraction": 3.14159,
+    "negative_fraction": -0.5,
+    "zero_fraction": 0.0,
+    "exp_lower": 1e10,
+    "exp_upper": 1E10,
+    "exp_plus": 1e+10,
+    "exp_minus": 1e-10,
+    "frac_and_exp": -1.5E+3,
+    "zero_exp": 0e0,
+    "big_int": 12345678901234567890,
+    "beyond_2_53": 9007199254740993,
+    "overflows_double": 1e400,
+    "underflows_double": 1e-400,
+    "long_fraction": 0.1000000000000000055511151231257827
+  },
+
+  "strings": {
+    "empty": "",
+    "simple": "hello",
+    "padded": "  leading and trailing  ",
+    "all_simple_escapes": "\" \\ \/ \b \f \n \r \t",
+    "unicode_escape": "\u0041\u00e9\u20ac",
+    "uppercase_hex": "\u00E9\uABCD",
+    "surrogate_pair": "\ud83d\ude00",
+    "lone_surrogate": "\ud800",
+    "nul_escape": "\u0000",
+    "control_escapes": "\u001f\u007f",
+    "raw_utf8": "héllo wörld 日本語 😀",
+    "looks_like_tokens": "{[,:]} true null 123 \"quoted\"",
+    "ends_with_backslash": "path\\",
+    "backslash_then_quote": "a\\\"b"
+  },
+
+  "keys": {
+    "": "empty key",
+    "dup": 1,
+    "dup": 2,
+    "key with spaces": 1,
+    "ключ": 1,
+    "esc\"aped\nkey": 1,
+    "\u0041": "key written as unicode escape"
+  },
+
+  "containers": {
+    "empty_object": {},
+    "empty_array": [],
+    "nested_empty": [[], {}, [[]], [{}], {"a": {}}],
+    "mixed_array": [1, "two", 3.0, true, false, null, [], {}],
+    "array_of_arrays": [[1, 2], [3, [4, [5, [6]]]]],
+    "array_of_objects": [{"a": 1}, {"a": 2}, {}],
+    "single_element": [0],
+    "deep": {"a": {"b": {"c": {"d": {"e": {"f": {"g": [[[[[[[null]]]]]]]}}}}}}}
+  }
+}
