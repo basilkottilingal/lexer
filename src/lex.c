@@ -553,6 +553,7 @@ int _pattern (char * rgx, size_t lim) {
         int k = 0;
         c = fgetc (in);
         if (c == ',' || (c >= '0' && c <= '9')) {
+          rgx [len++] = '{';
           rgx [len++] = c;
           continue;
         }
@@ -799,6 +800,16 @@ static int lex_print_tables () {
   if (dfa_tables (&tables, &len) < 0) {  /* comprssd tbles from DFA */
     error ("Table size Out of memory limit");
     return RGXOOM;
+  }
+
+  /* if isdebug option is ON, print RPN of all regex */
+  if (isdebug) {
+    int rpn [RGXSIZE];
+    for (int i=0; i<nrgx; ++i) {
+      printf ("\nRpn for rgx \"%s\"", rgx[i]);
+      rgx_rpn (rgx[i], rpn);
+      rgx_rpn_print (rpn);
+    }
   }
 
   char * names [] = {

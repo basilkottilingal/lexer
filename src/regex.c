@@ -117,7 +117,8 @@ int rgx_token ( char ** str ) {
       charclass = 1;
       RTN ( RGXOP ('[') );
     case ']' :
-      ERR (!charclass);
+      if (!charclass)
+        RTN (']');
       int s = charclass;
       charclass  = 0;
       RTN ( s == 2 ? RGXOP ('>' ) : RGXOP(']'));
