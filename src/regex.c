@@ -245,7 +245,28 @@ int rgx_rpn ( char * s, int * rpn ) {
     return ( stack.n == stack.max ?                                  \
        (stack.a[stack.n-1] = RGXOOM) : (stack.a[stack.n++] = RGXERR) )
 
-  char ** rgx = &s, * start = s;
+  char buffer [RGXSIZE + 4], * bf = buffer;
+  int len = strlen (s), additional = 0;
+  if (len > RGXSIZE) return RGXOOM;
+  if (s[0] != '^')
+  {
+    /* 
+    .. === addition optional BOL before patter ===
+    .. If the rgx doesn't have a BOL anchor requirement, like in ^abc,
+    .. we add BOL as optional. Example for pattern abc, we modify it
+    .. as ^?(abc)
+    */
+    buffer [additional++] = '^';
+    buffer [additional++] = '?';
+    if (s [0] != '(')
+      buffer [additional++] = '(';
+    memcpy ( &buffer [additional], s, len);
+    additional += len;
+    if (s [0] != '(')
+      buffer [additional++] = ')';
+    buffer [additional] = '\0';
+  }
+  char ** rgx = (s[0] != '^') ? &bf : &s, * start = *rgx;
   int queued[4],
       RGXOPS[RGXSIZE],
       op, last = RGXBGN;
@@ -256,17 +277,6 @@ int rgx_rpn ( char * s, int * rpn ) {
 
   token [0] = 0;                    /* Signify last token was empty */
   is_EOL = 0;
-
-  /*
-  .. If the rgx doesn't have a BOL anchor requirement, like in ^abc,
-  .. we add BOL as optional. Example for pattern abc, we modify it
-  .. as ^?abc
-  */
-  if ( s[0] != '^' ) {
-    queued [0] = RGXOP ('?');
-    queued [1] = RGXOP ('^');
-    queue.n = 2;
-  }
 
   while ((op = queue.n ? queue.a[--queue.n] : rgx_token (rgx)) >= 0) {
     if ( ISRGXOP (op) ) {
@@ -411,7 +421,7 @@ int rgx_rpn ( char * s, int * rpn ) {
     .. characters found in the regex
     */
     PUSH (stack, RGXEOE);
-    return (int) (*rgx - start) - 1; 
+    return (int) (*rgx - start) - 1 - additional; 
   }
 
   /*

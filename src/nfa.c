@@ -81,7 +81,6 @@ void nfa_reset ( char ** rgx, int nr ) {
   .. care at the end using class_char ().
   */
   class_init ();
-
   for (int i=0; i<nr; ++i) {
     rgx_rpn (rgx[i], rpn);
     int j = 0, c, ng = 0, queue [4], nq = 0, charclass = 0;

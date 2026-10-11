@@ -88,5 +88,5 @@ int    yyleng = 0;
 /*
 .. Current line number and columen number.
 */
-int lxr_line_no = 1;
-int lxr_col_no = 1;
+int yylineno = 1;
+int yycolno = 1;

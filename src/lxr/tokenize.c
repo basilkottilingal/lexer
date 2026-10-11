@@ -42,11 +42,11 @@ YYSTYPE
       yytext += acc_len;                                             \
       for (; acc_len; --acc_len) {                                   \
         if (*lxr_start++ == lxr_nel_class) {                         \
-          lxr_col_no = 1;                                            \
-          lxr_line_no++;                                             \
+          yycolno = 1;                                               \
+          yylineno++;                                                \
           continue;                                                  \
         }                                                            \
-        lxr_col_no++;                                                \
+        yycolno++;                                                   \
       }                                                              \
       state = 1 + (yytext [-1] == '\n');                             \
       acc_token = 0;                                                 \
