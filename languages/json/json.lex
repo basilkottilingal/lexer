@@ -14,11 +14,11 @@ typedef enum
   .. don't use TOKEN ID < 256 as there is a chance it might
   .. clash with ascii characters
   */
-  J_TRUE      = 257,
+  J_TRUE          = 257,
   J_FALSE,
   J_NULL,
   J_STRING,
-  J_WHITESPACE,
+  J_WS,
   J_NUMBER,
 } JSON_TOKEN;
 
@@ -30,14 +30,9 @@ true                                            { return J_TRUE; }
 false                                           { return J_FALSE; }
 null                                            { return J_NULL; }
 \"([^"\\\x00-\x1F]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})*\"   { return J_STRING; }
-\[                                              { return '['; }
-\]                                              { return ']'; }
-:                                               { return ':';}
-,                                               { return ','; }
-\{                                              { return '{'; }
-\}                                              { return '}'; }
+\[|\]|:|,|\{|\}                                 { return yyetxt [0] }
 -?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?  { return J_NUMBER; }
-[ \t\v\n\f]+                                    { /* skip white spaces*/ }
+[ \t\v\n\f]+                                    { return J_WS; }
 .                                               { fprintf (stderr, "\nerror : %s", yytext); }
 
 %%
