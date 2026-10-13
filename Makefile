@@ -3,16 +3,19 @@ CFLAGS = -Iinclude -Wall
 C99    = -std=c99 -pedantic
 
 RGX    = src/debug.c src/regex.c src/nfa.c src/dfa.c src/allocator.c \
-         src/stack.c src/bits.c src/error.c src/class.c              \
-         src/compression.c
+	       src/stack.c src/bits.c src/error.c src/class.c              \
+	       src/compression.c
 LXR    = src/lex.c
 OBJ    = $(patsubst src/%.c, obj/%.o, $(RGX))
 LOBJ   = $(patsubst src/%.c, obj/%.o, $(LXR))
 TST    = test/nfa.c test/dfa.c test/bits.c test/tokens-nfa.c         \
-         test/min-dfa.c test/hopcroft.c test/stack.c test/class.c    \
-         test/charclass.c test/json.c test/tbl-json.c                \
-         test/quantifier.c
+	       test/min-dfa.c test/hopcroft.c test/stack.c test/class.c    \
+	       test/charclass.c test/json.c test/tbl-json.c                \
+	       test/quantifier.c
 RUN    = $(patsubst test/%.c, obj/%.tst, $(TST))
+
+src/lxr/stringified.h: src/lxr/tokenize.c src/lxr/api.c src/lxr/source.c src/lxr/stringify.c src/lxr/license.c
+	cd src/lxr && make stringified.h
 
 $(RUN) $(OBJ): | obj
 
@@ -46,7 +49,7 @@ obj/%.tst: obj/%.s
 clean:
 	rm -f ./obj/*
 
-lxr: src/main.c obj/lxr.a Makefile
+lxr: src/lxr/stringified.h src/main.c obj/lxr.a Makefile
 	$(CC) $(CFLAGS) -o lxr src/main.c obj/lxr.a
 
 %.lxr: %.lex lxr

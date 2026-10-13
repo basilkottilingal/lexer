@@ -113,6 +113,7 @@ void lxr_clean () {
   if (lxr_class_buff) {
     free (lxr_class_buff);
     lxr_class_buff = NULL;
+    lxr_class_buff_size = 0;
   }
 
   if (lxr_in)

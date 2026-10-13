@@ -13,6 +13,7 @@
 flex file.l*/
 
 #include <stdio.h>
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -21,6 +22,8 @@ flex file.l*/
 #include "lexer.h"
 #include "regex.h"
 #include "class.h"
+
+#include "lxr/stringified.h"
 
 static int isdebug = 0;
 void lxr_debug () {
@@ -878,27 +881,22 @@ static int lex_print_tables () {
 
 static int lex_print_lxr_fnc () {
 
-  char buff[1024];
-  size_t n;
-  FILE * source = fopen("./src/lxr/tokenize.c", "r");
-
-  if (!source)
-    return RGXERR;
-
-  while (fgets (buff, sizeof buff, source)) {
-    size_t l = strlen (buff);
-    if (buff [l-1] != '\n') {
-      error ("insuff buff"); return RGXOOM;
+  char * before = stringify_tokenize, * end = before, c;
+  while ( (c = *end) != '\0' )
+  {
+    if ( c == '/' && end [1] == '*' && end [2] == '%' )
+    {
+      *end = '\0';
+      break;
     }
-    int j = 0; char c;
-    while ( (c = buff [j++]) != '\0' ) {
-      if ( c == '/' && buff [j] == '*' && buff [j+1] == '%' ) {
-        j = -1; break;
-      }
-    }
-    if (j == -1) break;
-    echo (buff);
+    end++;
   }
+  assert (c != '\0');
+  char * after = end + 1;
+  while ( (c = *after++) != '\0' && c != '\n' ) {}
+  assert (c != '\0');
+  
+  echo (before);
   size_t nrgx = ( actions->len / sizeof (void *) );
   Action ** A = (Action **) actions->stack;
   for (int i=0; i < nrgx; ++i) {
@@ -911,16 +909,9 @@ static int lex_print_lxr_fnc () {
       "\n          break;\n");
     line_out += 5;
   }
-
   echo ("\n");
   echo_line (NULL, 0);
-
-  while ((n = fread(buff, 1, sizeof (buff)-1, source)) > 0) {
-    buff [n] = '\0';
-    echo (buff);
-  }
-
-  fclose (source);
+  echo (after);
   fflush (in);
   return 0;
 }
@@ -946,28 +937,8 @@ static void lex_print_snippets () {
 }
   
 int lex_print_source () {
-
-  char buff[1024];
-  size_t n;
-  FILE * source = fopen("./src/lxr/api.c", "r");
-
-  if (!source)
-    return RGXERR;
-  while ((n = fread(buff, 1, sizeof(buff)-1, source)) > 0) {
-    buff [n] = '\0';
-    echo (buff);
-  }
-  fclose (source);
-
-  source = fopen("./src/lxr/source.c", "r");
-  if (!source)
-    return RGXERR;
-  while ((n = fread(buff, 1, sizeof(buff)-1, source)) > 0) {
-    buff [n] = '\0';
-    echo (buff);
-  }
-  fclose (source);
-
+  echo (stringify_api);
+  echo (stringify_source);
   fflush (in);
   return 0;
 }
@@ -1001,7 +972,10 @@ int read_lex_input ( const char * _in_, const char * _out_ ) {
   }
 
   line = 0;
+  /* write license first */
+  echo (stringify_license);
 
+  /* write the definition head in the %{ %} preamble of lex file */
   if (lex_read_definitions () < 0) {
     error ("failed reading definition section. line %d", line);
     return RGXERR;
@@ -1019,6 +993,7 @@ int read_lex_input ( const char * _in_, const char * _out_ ) {
   lex_print_snippets ();
 
   echo_line (NULL, 0);
+
   if (lex_print_tables () < 0) {
     error ("failed creating tables");
     return RGXERR;

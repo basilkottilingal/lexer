@@ -50,17 +50,17 @@ int main (int argc, const char ** argv)
         file = dot + 1;
         break;
       }
-    printf ("const char stringify_");
+    printf ("char stringify_");
     char c;
     while ( (c = *file++) != '.')
       printf ("%c", c);
     printf (" [ ] = \n\t\"");
 
     /* set argv [1] as the lexer source */   
-    lxr_source (argv [1]);
+    lxr_source (argv [iarg]);
 
     while (yylex ()) {};
-    printf ("\";");
+    printf ("\";\n\n");
 
     lxr_clean ();
   }
