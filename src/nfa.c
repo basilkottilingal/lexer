@@ -145,7 +145,7 @@ void nfa_reset ( char ** rgx, int nr ) {
   printf ("\n [  ");
   for (int i=0; i<256; ++i) {
     buff [0] = (char) i;
-    printf ("%s %d  ", i>32 && i<126 ? buff : " ", class[i]);
+    printf ("%s %2d  ", i>32 && i<126 ? buff : " ", class[i]);
     if ( (i & (int) 15) == 0)
       printf ("\n    ");
   }

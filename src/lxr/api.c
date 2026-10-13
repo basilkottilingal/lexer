@@ -8,8 +8,8 @@
 .. User can define the signature for lexer function as a macro
 .. The default type is `int lxr_lex (void)`
 */
-#ifndef YYSTYPE
-  #define YYSTYPE  int lxr_lex ()
+#ifndef YY_DECL
+  #define YY_DECL  int lxr_lex ()
 #endif
 
 /*

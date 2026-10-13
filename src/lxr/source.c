@@ -19,7 +19,7 @@ static unsigned char
 static unsigned char * lxr_start = lxr_dummy;
 static unsigned char * lxr_bptr  = lxr_dummy;
 static unsigned char * lxr_class_buff = NULL;
-static int lxr_class_buff_size = 0;
+static size_t lxr_class_buff_size = 0;
 
 static char lxr_hold_char = '\0';
 
@@ -185,7 +185,7 @@ static void lxr_buffer_update () {
   size_t size = lxr_size, non_parsed = lxr_bptr - lxr_start;
 
   lxr_buff_stack * s = lxr_buff_stack_current;
-  if (s == NULL || (yytext - s->bytes) > (size_t) 1 ) {
+  if (s == NULL || (yytext - s->bytes) > 1 ) {
 
     while ( size <= non_parsed )
       size *= 2;

@@ -347,7 +347,14 @@ hopcroft ( State * nfa, DState ** dfa, int nnfa, int ntokens ) {
 
   if (ntokens > nq) {
     error ("dfa : Bad Lexer Design. "
-      "Some tokens are never reachable?!");
+      "\nsome tokens are never reachable?!");
+    return RGXERR;
+  }
+
+  DState * bol = q [nq-1]->next [BOL_CLASS];  
+  if (RGXMATCH (q [nq-1]) || RGXMATCH (bol)) {
+    error ("dfa : Bad Lexer Design. "
+      "\nstarting DFA states cannot be an acceptable token");
     return RGXERR;
   }
 
@@ -355,8 +362,8 @@ hopcroft ( State * nfa, DState ** dfa, int nnfa, int ntokens ) {
   .. Maintain a pool of bitsets. Create the partition set P(Q) stored
   .. in stack 'P'. 'W' is a temporary stack used in Hopcroft alogirthm
   */
-  int rounded =                           /* rounded, 2^N >= 1 + nq */
-    1 << (64 - __builtin_clzll ((unsigned long long) nq) );
+  int rounded =                       /* rounded, 2^N >= 1 + (nq + 2) */
+    1 << (64 - __builtin_clzll ((unsigned long long) (nq+2)) );
   Stack * pool = stack_new (rounded * sizeof (void *)),
     * P = stack_new (rounded * sizeof (void *)),
     * W = stack_new (rounded * sizeof (void *));
@@ -378,7 +385,14 @@ hopcroft ( State * nfa, DState ** dfa, int nnfa, int ntokens ) {
   .. the lowest token number that satisfied the input string)
   */
 
+  
   {
+    /*
+    .. let's enforce bol and root (q [nq-1]) be in separate sets
+    .. after the partition
+    */
+    RGXMATCH (bol) = 1 + ntokens++; /* fake token ID for BOL */
+
     uint64_t ** y = (uint64_t **) P->stack, * f;
     for (int i=0; i<nq; ++i) {
       int token = RGXMATCH (q[i]);
@@ -390,11 +404,13 @@ hopcroft ( State * nfa, DState ** dfa, int nnfa, int ntokens ) {
       BITINSERT (f, i);
     }
 
+    RGXMATCH (bol) = 0; /* unset the fake token ID for BOL */
+
     uint64_t ** w = (uint64_t **) W->stack;
     for (int t=1; t<=ntokens; ++t) {
       if (! y[t]) {
         error ("dfa : Bad Lexer Design. "
-          "Some tokens are never reachable?!");
+          "\nSome tokens are never reachable?!");
         return RGXERR;
       }
       w[t-1] = COPY (y[t]); // FCOPY [t * 64];
@@ -403,7 +419,8 @@ hopcroft ( State * nfa, DState ** dfa, int nnfa, int ntokens ) {
     P->len = (ntokens+1) * sizeof (void *);
     W->len = ntokens * sizeof (void *);
     if (!y[0]) {
-      y [0] = y [ntokens]; y [ntokens] = NULL;
+      y [0] = y [ntokens];
+      y [ntokens] = NULL;
       P->len -= sizeof (void *);
     }
 

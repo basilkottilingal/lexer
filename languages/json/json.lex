@@ -1,12 +1,8 @@
 %{
 
-/*
-.. standalone test 
-.. gcc -DJSON_LEX_TESTING -o json-lxr <this.c> && ./json-lxr < test.json
-*/
+/* gcc -DJSON_LEX_TESTING -o lexer lexer.c && ./lexer < test.json */
 
-/* let's use 'yylex' for the tokenizer as bison only expects yylex */
-#define YYSTYPE  int yylex ()
+#define YY_DECL int yylex (void)
 
 /*
 .. refer to the combined lexer + grammar rules of json at
@@ -23,6 +19,7 @@ typedef enum
   J_FALSE,
   J_NULL,
   J_STRING,
+  J_WS,
   J_NUMBER,
 } JSON_TOKEN;
 
@@ -36,7 +33,7 @@ null                                            { return J_NULL; }
 \"([^"\\\x00-\x1F]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})*\"   { return J_STRING; }
 \[|\]|:|,|\{|\}                                 { return yytext [0]; }
 -?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?  { return J_NUMBER; }
-[ \t\v\n\f]+                                    { /* skip */ }
+[ \t\v\n\f]+                                    {  }
 .                                               { fprintf (stderr, "\nerror : %s", yytext); }
 
 %%

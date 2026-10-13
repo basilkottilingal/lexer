@@ -24,7 +24,7 @@
 .. The main lexer function. Returns 0, when EOF is encountered. So,
 .. don't use return value 0 inside any action.
 */
-YYSTYPE
+YY_DECL
 {
   static int states [lxr_state_stack_size];
   unsigned char * cls;
