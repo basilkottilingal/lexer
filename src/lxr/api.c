@@ -76,7 +76,7 @@ static const char * lxr_bytes_start = NULL;
 static const char * lxr_bytes_end   = NULL;
 
 static void lxr_buffer_update ();
-static char lxr_yytext_dummy[] = "\n";
+static char lxr_yytext_dummy [3] = { '\n', '\0', '\0' };
 
 /*
 .. yytext and yyleng are respectively the token text and token length

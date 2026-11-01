@@ -15,7 +15,7 @@ typedef struct lxr_buff_stack {
 } lxr_buff_stack ;
 
 static unsigned char
-  lxr_dummy[3] = {lxr_eob_class, lxr_eob_class, lxr_eob_class};
+  lxr_dummy[4] = {lxr_eob_class, lxr_eob_class, lxr_eob_class, 0};
 static unsigned char * lxr_start = lxr_dummy;
 static unsigned char * lxr_bptr  = lxr_dummy;
 static unsigned char * lxr_class_buff = NULL;
@@ -53,11 +53,11 @@ void lxr_read_bytes (const char * bytes, size_t len, int eob) {
   /* fixme : in case another byte source available */
   size_t size = len < lxr_size ? len : lxr_size;
   lxr_buff_stack * bf = lxr_alloc (sizeof (lxr_buff_stack));
-  char * b = lxr_alloc (size + 2);
+  char * b = lxr_alloc (size + 3);
   if (lxr_class_buff_size < size)
     lxr_class_buff_size = size;
   lxr_class_buff =
-    lxr_realloc (lxr_class_buff, lxr_class_buff_size + 2);
+    lxr_realloc (lxr_class_buff, lxr_class_buff_size + 3);
   if ( bf == NULL || b == NULL || lxr_class_buff == NULL ) {
     fprintf (stderr, "lxr_realloc failed");
     exit (-1);
@@ -198,12 +198,12 @@ static void lxr_buffer_update () {
     }
     * s = (lxr_buff_stack) {
       .size  = size,
-      .bytes = lxr_alloc (size + 2),
+      .bytes = lxr_alloc (size + 3),
       .next  = lxr_buff_stack_current
     };
     if (lxr_class_buff_size < size) {
       lxr_class_buff_size = size;
-      lxr_class_buff = lxr_realloc (lxr_class_buff, size + 2); 
+      lxr_class_buff = lxr_realloc (lxr_class_buff, size + 3); 
     }
     if ( s->bytes == NULL || lxr_class_buff == NULL ) {
       fprintf (stderr, "lxr_alloc failed");
@@ -216,10 +216,10 @@ static void lxr_buffer_update () {
   }
   else {
     size = s->size * 2;
-    s->bytes = lxr_realloc (s->bytes, size + 2);
+    s->bytes = lxr_realloc (s->bytes, size + 3);
     if (lxr_class_buff_size < size) {
       lxr_class_buff_size = size;
-      lxr_class_buff = lxr_realloc (lxr_class_buff, size + 2); 
+      lxr_class_buff = lxr_realloc (lxr_class_buff, size + 3); 
     }
     s->size  = size;
     if ( s->bytes == NULL || lxr_class_buff == NULL ) {
