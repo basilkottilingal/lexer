@@ -8,9 +8,9 @@
 #include "bits.h"
 
 typedef struct Block {
-  struct Block * next, * prev;
-  size_t size, allocsize;
+  struct Block * next;
   char * head;
+  size_t size;
 } Block ;
 
 static Block  * blockhead = NULL;
@@ -26,12 +26,11 @@ static Block * block_new ( void ) {
   assert (mem);
   Block * block = (Block *) mem;
   /* fixme : may use "max_align_t" for safer alignment*/
-  size_t bsize = (sizeof (Block) + 7) & ~((size_t) 7);
+  size_t mask = sizeof (void *) - 1;
+  size_t bsize = (sizeof (Block) + mask) & ~mask;
   *block = (Block) {
     .next = blockhead,
-    .prev = NULL,
     .size = s - bsize,
-    .allocsize = s,
     .head = (char *) mem + bsize
   };
   if (!bins) {
@@ -52,17 +51,16 @@ static int block_available (size_t s) {
 void destroy () {
   while ( blockhead ){
     Block * next = blockhead->next;
-    free ( blockhead );
+    free ( (void *) blockhead );
     blockhead = next;
   }
 }
 
 void * allocate ( size_t size ) {
-  size = (size + 7) & ~((size_t) 7);
-  if (!block_available (size)) {
-    Block * oldb = blockhead, * newb = block_new();
-    if (oldb) { oldb->prev = newb; }
-  }
+  size_t mask = sizeof (void *) - 1;
+  size = (size + mask) & ~mask;
+  if (!block_available (size))
+    blockhead = block_new ();
   char * mem = blockhead->head;
   memset (mem, 0, size);
   blockhead->head += size;

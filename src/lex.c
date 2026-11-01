@@ -296,12 +296,16 @@ static int macro_new (char * macro, char * pattern) {
   */
   rgx [len] = '\0';
   int rpn [RGXSIZE];
-  len = rgx_rpn (rgx, rpn);       /* return rgx length if succesful */
-  if (len <= 0) {
+  int rpnlen = rgx_rpn (rgx, rpn);       /* return rgx length if succesful */
+  rgx [rpnlen] = '\0'; 
+  if (isdebug)
+  {
+    printf ("\nmaking regex for `%s` [rpn len %d]", rgx, rpnlen);
+  }
+  if (rpnlen <= 0) {
     error ("cannot create rpn for regex %s in line %d", rgx, line);
     return RGXERR;
   }
-  rgx [len] = '\0';        /* Remove trailing white spaces (if any) */
 
   /*
   .. Insert macro to hashtable
@@ -315,6 +319,10 @@ static int macro_new (char * macro, char * pattern) {
   *p = m = allocate (sizeof (Macro));
   m->key = allocate_str (macro);
   m->rgx = allocate_str (rgx);
+
+  if (isdebug) {
+    printf ("\nmacro %s : %s", m->key, m->rgx);
+  }
 
   if ( ! ( (rgx [0] == '[' && rgx [len-1] == ']') ||
        (rgx [0] == '(' && rgx [len-1] == ')') ) ) {
@@ -634,22 +642,42 @@ int _action (char * buff, size_t lim) {
   .. Consume white spaces before encountering '{' i.e start of action.
   .. Warning : Action need to be in the same line as regex.
   */
-  while ( (c = fgetc(in)) != EOF ) {
-    if ( c == '{' ) {
-      depth++;
-      buff [j++] = '{';
-      break;
-    }
-    if ( !(c == ' ' || c == '\t' ) ) {
-      error ("lxr grammar : Unexpected character"
-        "between regex & action");
+  for (;;) {
+    c = fgetc(in);
+    if (c == EOF || c == '\n') {
+      error ("action (for pattern) missing");
       return RGXERR;
     }
-  }
-
-  if (!depth) {
-    error ("missing action");
-    return RGXERR;
+    if (c == '{') {
+      depth++;
+      PUSH ('{');
+      break;
+    }
+    if ( c == '|' ) {
+      error ("grouping of patterns like"
+             "\n\nPAT1 |\nPAT2 {/*actions*/}"
+             "\n\nnot implemented");
+      return RGXERR;
+    }
+    if (c == ' ' || c == '\t')
+      continue;
+    /* [maybe] action not placed in a {} */
+    error ("warning : in line %d, recommended action in { }"
+           ". may result in unexpected behaviour", line);
+    for (;;)
+    {
+      PUSH (c);
+      c = fgetc (in);
+      if (c == EOF) {
+        error ("action (for pattern) missing");
+        return RGXERR;
+      }
+      if (c == '\n') {
+        line++;
+        PUSH ('\0');
+        return 0;
+      }
+    }
   }
 
   /*

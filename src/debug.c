@@ -34,7 +34,7 @@ void operand_string (int op, char * s)
     sprintf (s, " '%c'", c); return;
   }
   /* non-printable ascii characters are printed as \xHH */
-  sprintf (s, "\\x%02X", c);
+  sprintf (s, "\\x%02X", op);
 }
 
 void rgx_rpn_print_non_formatted ( int * rpn ) {

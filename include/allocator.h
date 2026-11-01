@@ -9,7 +9,7 @@
   #include <stdlib.h>
 
   #ifndef BLOCK_SIZE
-    #define BLOCK_SIZE (1<<15)    /* 32 kB     */
+    #define BLOCK_SIZE (1<<16)    /* 64 kB     */
   #endif
   #ifndef PAGE_SIZE
     #define PAGE_SIZE 8192

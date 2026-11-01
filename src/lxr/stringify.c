@@ -1,5 +1,27 @@
 
-# line 2 "languages/stringify/stringify.l"
+/*
+  Table based lexer auto-generated using the lexer generator
+  [https://github.com/basilkottilingal/lexer].
+
+
+  Copyright (C) [2026] [Ahmed Basil KOTTILINGAL]
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+*/
+
+# line 2 "stringify.l"
 /*
 .. convert all .c files into const string [] literals.
 */
@@ -11,7 +33,7 @@
 #include <string.h>
 
 
-# line 15 "languages/stringify/stringify.c"
+# line 37 "stringify.c"
 
 /*
 .. Equivalence classes for alphabets in [0x00, 0xFF] are
@@ -257,8 +279,8 @@ void lxr_source (const char * in) {
 void lxr_read_bytes (const char * bytes, size_t len, int eob) {
   /* fixme : in case another byte source available */
   size_t size = len < lxr_size ? len : lxr_size;
-  lxr_buff_stack * bf = malloc (sizeof (lxr_buff_stack));
-  char * b = malloc (size + 2);
+  lxr_buff_stack * bf = lxr_alloc (sizeof (lxr_buff_stack));
+  char * b = lxr_alloc (size + 2);
   if (lxr_class_buff_size < size)
     lxr_class_buff_size = size;
   lxr_class_buff =
@@ -637,64 +659,64 @@ YY_DECL
           #endif
           break;
 
-
+        
         case 1 :
-          # line 15 "languages/stringify/stringify.l"
+          # line 15 "stringify.l"
           {printf ("%s", yytext); }
           break;
 
         case 2 :
-          # line 16 "languages/stringify/stringify.l"
+          # line 16 "stringify.l"
           { printf ("\\n\"\n\t\""); }
           break;
 
         case 3 :
-          # line 17 "languages/stringify/stringify.l"
+          # line 17 "stringify.l"
           { printf ("\\t"); }
           break;
 
         case 4 :
-          # line 18 "languages/stringify/stringify.l"
+          # line 18 "stringify.l"
           { printf ("\\a"); }
           break;
 
         case 5 :
-          # line 19 "languages/stringify/stringify.l"
+          # line 19 "stringify.l"
           { printf ("\\v"); }
           break;
 
         case 6 :
-          # line 20 "languages/stringify/stringify.l"
+          # line 20 "stringify.l"
           { printf ("\\b"); }
           break;
 
         case 7 :
-          # line 21 "languages/stringify/stringify.l"
+          # line 21 "stringify.l"
           { printf ("\\r"); }
           break;
 
         case 8 :
-          # line 22 "languages/stringify/stringify.l"
+          # line 22 "stringify.l"
           { printf ("\\f"); }
           break;
 
         case 9 :
-          # line 23 "languages/stringify/stringify.l"
+          # line 23 "stringify.l"
           { printf ("\\\""); }
           break;
 
         case 10 :
-          # line 24 "languages/stringify/stringify.l"
+          # line 24 "stringify.l"
           { printf ("\\\\"); }
           break;
 
         case 11 :
-          # line 25 "languages/stringify/stringify.l"
+          # line 25 "stringify.l"
           { assert (0 && "character not allowed in c string literals"); }
           break;
 
 
-# line 698 "languages/stringify/stringify.c"
+# line 720 "stringify.c"
 
         case lxr_eof_accept :
           lxr_bptr = lxr_start;
@@ -734,7 +756,7 @@ YY_DECL
   return EOF;                     /* The code will never reach here */
 }
 
-# line 28 "languages/stringify/stringify.l"
+# line 28 "stringify.l"
 
 
 int main (int argc, const char ** argv)

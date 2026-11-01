@@ -1,6 +1,8 @@
 
-  /*
-  Table based lexer generator, made by Ahmed Basil KOTTILINGAL
+/*
+  Table based lexer auto-generated using the lexer generator
+  [https://github.com/basilkottilingal/lexer].
+
 
   Copyright (C) [2026] [Ahmed Basil KOTTILINGAL]
 
@@ -17,4 +19,4 @@
   You should have received a copy of the GNU General Public License
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-  */
+*/

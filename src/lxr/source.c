@@ -52,8 +52,8 @@ void lxr_source (const char * in) {
 void lxr_read_bytes (const char * bytes, size_t len, int eob) {
   /* fixme : in case another byte source available */
   size_t size = len < lxr_size ? len : lxr_size;
-  lxr_buff_stack * bf = malloc (sizeof (lxr_buff_stack));
-  char * b = malloc (size + 2);
+  lxr_buff_stack * bf = lxr_alloc (sizeof (lxr_buff_stack));
+  char * b = lxr_alloc (size + 2);
   if (lxr_class_buff_size < size)
     lxr_class_buff_size = size;
   lxr_class_buff =

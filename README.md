@@ -17,10 +17,10 @@ int  lxr_input      ( );
 int  lxr_unput      ( );
 void lxr_clean      ( );
 ```
-  In case lexer function's signature (YYSTYPE) is not provided by the user,
+  In case lexer function's signature **YY_DECL** is not provided by the user,
   the default lexer function will look like
 ```c
-int lxr_lex ();
+int yylex (void)
 ```
 
 # Tokenizer or Lexer reader
@@ -152,6 +152,5 @@ Proceedings of the 3rd Annual ACM Symposium on Theory of Computing (STOC), 1971,
 
 ## ToDo
 
-  1. YYSTYPE not tested for return type other than `int`
-  2. OR operator ('|') for multiple patterns with same action
-  3. garbage collection : deallocate () in case memory is constrained
+  1. OR operator ('|') for multiple patterns with same action (as in flex)
+  2. garbage collection : deallocate () in case memory is constrained

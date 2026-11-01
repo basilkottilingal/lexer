@@ -170,6 +170,7 @@ int rgx_token ( char ** str ) {
     case ' ' :
       RTN ( charclass ? ' ' : RGXEOE );
     case '{' :
+      if (charclass) RTN (c);
       int *r = &token[1], nread = 0; r[0] = 0, r[1] = INT_MAX;
       for (int i=0; i<2; ++i) {
         int ndigits = 0, val = 0;
@@ -265,8 +266,9 @@ int rgx_rpn ( char * s, int * rpn ) {
     if (s [0] != '(')
       buffer [additional++] = ')';
     buffer [additional] = '\0';
+    additional -= len;
   }
-  char ** rgx = (s[0] != '^') ? &bf : &s, * start = *rgx;
+  char ** rgx = (s[0] != '^') ? &bf : &s, * const start = *rgx;
   int queued[4],
       RGXOPS[RGXSIZE],
       op, last = RGXBGN;
@@ -421,7 +423,7 @@ int rgx_rpn ( char * s, int * rpn ) {
     .. characters found in the regex
     */
     PUSH (stack, RGXEOE);
-    return (int) (*rgx - start) - 1 - additional; 
+    return (int) (*rgx - start) - 1 - additional;
   }
 
   /*
