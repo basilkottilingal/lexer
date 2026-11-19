@@ -176,9 +176,16 @@ static int compare ( const void * a, const void * b ) {
   #undef CMP
 }
 
+/*
+.. check[], next[] and base[] are written as "short" arrays in the
+.. generated lexer, so the table size (and so any offset in base[])
+.. has to fit in a short.
+*/
+#define TABLE_LIMIT          SHRT_MAX
+
 static int resize (int k0) {
   int sold = limit * sizeof (int), s = sold + k0 * sizeof(int);
-  if (s > PAGE_SIZE) return RGXOOM;
+  if (limit + k0 > TABLE_LIMIT) return RGXOOM;
   check = reallocate (check, sold, s);
   next = reallocate (next, sold, s);
   memset (& check [limit], EMPTY, s - sold);
@@ -263,7 +270,7 @@ int rows_compression ( Row ** rows, int *** tables,
       if (offset + 2*n > limit)   /* resize next[], check[] if reqd */
         if (resize (k0)) {
           error ("Table compression: Out of table size limit %d",
-            (int) PAGE_SIZE / sizeof (int));
+            TABLE_LIMIT);
           return RGXOOM;
         }
 

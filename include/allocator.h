@@ -1,7 +1,8 @@
 #ifndef _H_ALLOCATE_
 #define _H_ALLOCATE_
   /*
-  .. A general pool that allocates memory with size in (0, 4088 Bytes].
+  .. A general pool allocator. Allocations up to PAGE_SIZE are served
+  .. from large memory blocks; larger ones get a block of their own.
   .. Warning. There is no memory freeing (except at the end of pgm).
   .. So repeated allocations may exhaust RAM.
   */

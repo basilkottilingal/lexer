@@ -44,8 +44,33 @@ static Block * block_new ( void ) {
 }
 
 static int block_available (size_t s) {
-  assert ( s <= PAGE_SIZE );
   return ( blockhead && ( blockhead->size > s ) );
+}
+
+/*
+.. Allocations larger than PAGE_SIZE get a dedicated memory block of
+.. their own. It is linked into the list of blocks (so that destroy ()
+.. frees it), but placed after the current head block, so that the
+.. free space left in the head block is still used by allocate ().
+*/
+static void * allocate_large ( size_t size ) {
+  size_t mask = sizeof (void *) - 1;
+  size_t bsize = (sizeof (Block) + mask) & ~mask;
+  Block * block = (Block *) malloc (bsize + size);
+  assert (block);
+  block->size = 0;                       /* no free space left in it */
+  block->head = (char *) block + bsize + size;
+  if (blockhead) {
+    block->next = blockhead->next;
+    blockhead->next = block;
+  }
+  else {
+    block->next = NULL;
+    blockhead = block;
+  }
+  char * mem = (char *) block + bsize;
+  memset (mem, 0, size);
+  return (void *) mem;
 }
 
 void destroy () {
@@ -59,6 +84,8 @@ void destroy () {
 void * allocate ( size_t size ) {
   size_t mask = sizeof (void *) - 1;
   size = (size + mask) & ~mask;
+  if (size > PAGE_SIZE)
+    return allocate_large (size);
   if (!block_available (size))
     blockhead = block_new ();
   char * mem = blockhead->head;

@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <limits.h>
 
 #include "nfa.h"
 #include "class.h"
@@ -65,9 +66,7 @@ static DState * dfa_root ( State * nfa, int nnfa ) {
     { 67, 131, 257, 521, 1031, 2053, 4099, 8209, 16411 },
     nprimes = (int) (sizeof (primes) / sizeof (primes[0]));
   while ((1<<n) < nnfa && n - 6 < nprimes - 1) n++;
-  hsize = primes[ n - 6 ];
-  while (hsize * sizeof (void *) > PAGE_SIZE)       /* memory limit */
-    hsize = primes[ --n - 6 ];
+  hsize = primes[ n - 6 ];       /* (allocator handles > PAGE_SIZE) */
   htable = allocate ( hsize * sizeof (State *) );
 
   /*
@@ -435,6 +434,21 @@ hopcroft ( State * nfa, DState ** dfa, int nnfa, int ntokens ) {
 
     P->len = (ntokens+1) * sizeof (void *);
     W->len = ntokens * sizeof (void *);
+
+    /*
+    .. The DFA is not complete : a missing transition goes to an
+    .. implicit DEAD state. The usual initialization W <- { F } (Q \ F
+    .. left out) is valid only for a complete DFA, because splitting by
+    .. F implies the split by Q \ F only if every state has a transition
+    .. for every c. So Q \ F is added to W too. (The implicit DEAD
+    .. state is the block that is left out). Without this, states like
+    .. "after 'a'" and "after any char" in { abc, . } were merged, and
+    .. "xbc" was accepted as "abc".
+    */
+    if (y[0]) {
+      w[ntokens] = COPY (y[0]);
+      W->len += sizeof (void *);
+    }
     if (!y[0]) {
       y [0] = y [ntokens];
       y [ntokens] = NULL;
@@ -736,6 +750,15 @@ int dfa_tables (int *** tables, int ** tsize) {
   */
   if (nclass > 256) {
     error ("highly refined eq class. internal limit");
+    return RGXOOM;
+  }
+
+  /*
+  .. State numbers are written to "short" tables (next[], def[])
+  */
+  if (nstates + 2 > SHRT_MAX) {
+    error ("too many dfa states (%d). internal limit %d",
+      nstates, SHRT_MAX - 2);
     return RGXOOM;
   }
 

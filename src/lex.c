@@ -222,9 +222,18 @@ static int macro_new (char * macro, char * pattern) {
       len += l;                                                      \
     } while (0)
 
+  #define PUT(_c_) do {                                              \
+      if (len + 1 >= RGXSIZE) {                                      \
+        error ("rgx buffer out of memory");                          \
+        return RGXERR;                                               \
+      }                                                              \
+      rgx [len++] = (_c_);                                           \
+    } while (0)
+
   Macro ** p, * m;
   char rgx [RGXSIZE], * ptr = pattern, c;
   size_t len = 0;
+  int quote = 0, charclass = 0;
 
   while ( (c = *ptr++) ) {
 
@@ -237,6 +246,45 @@ static int macro_new (char * macro, char * pattern) {
       COPY (start);
       continue;
     }
+
+    /*
+    .. Quoted string : same as in rules (see _pattern ()). "..." is
+    .. written as ( ... ), with the special characters escaped.
+    */
+    if (quote) {
+      if (c == '"') {
+        quote = 0;
+        if (rgx [len-1] == '(') len--;           /* empty string "" */
+        else PUT (')');
+        continue;
+      }
+      if (c == ' ')       { PUT ('\\'); PUT (' '); continue; }
+      if (c == '\t')      { PUT ('\\'); PUT ('t'); continue; }
+      if (strchr ("|*?+[]{}()^$-.", c)) PUT ('\\');
+      PUT (c);
+      continue;
+    }
+
+    /*
+    .. Inside a character class, '{' and '"' are just characters
+    */
+    if (charclass) {
+      if (c == ']') charclass = 0;
+      COPY (start);
+      continue;
+    }
+    if (c == '[') {
+      charclass = 1;
+      /* a ']' right after '[' or '[^' would close the class (rgx.c) */
+      COPY (start);
+      continue;
+    }
+    if (c == '"') {
+      quote = 1;
+      PUT ('(');
+      continue;
+    }
+
     if (c != '{') {
       COPY (start);
       continue;
@@ -289,6 +337,12 @@ static int macro_new (char * macro, char * pattern) {
       return RGXERR;
     }
   }
+
+  if (quote) {
+    error ("unterminated quoted string in macro %s", macro);
+    return RGXERR;
+  }
+  #undef PUT
 
   /*
   .. Check the validity of the macro's regex pattern before inserting
@@ -471,7 +525,8 @@ int _pattern (char * rgx, size_t lim) {
   #define EMPTY    10
   #define NOACTION 11
 
-  int c, len = 0, escape = 0, charclass = 0, quote = 0, end = 0;
+  int c, len = 0, escape = 0, charclass = 0, quote = 0, end = 0,
+    qstart = 0;              /* index of '(' that replaced opening '"' */
   char macro [MACROLIM];
 
   while ( (c = fgetc(in)) != EOF ) {
@@ -497,7 +552,15 @@ int _pattern (char * rgx, size_t lim) {
     if (quote) {
       switch (c) {
         case '"' :
-          len--;
+          /*
+          .. A quoted string is a single unit, like in flex : "ab"? is
+          .. (ab)? and not ab?. So "..." is written as ( ... ). An empty
+          .. string "" is simply dropped.
+          */
+          if (len - 1 == qstart + 1)
+            len -= 2;
+          else
+            rgx [len-1] = ')';
           quote = 0;
           break;
         case '|' : case '*' : case '?' : case '+' :
@@ -625,7 +688,8 @@ int _pattern (char * rgx, size_t lim) {
         len += l;
         break;
       case '"' :
-        --len;
+        rgx [len-1] = '(';              /* "..." is written as (...) */
+        qstart = len - 1;
         quote = 1;
         break;
     }
