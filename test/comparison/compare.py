@@ -42,6 +42,7 @@ import shutil
 import statistics
 import subprocess
 import sys
+import time
 import zlib
 
 import gen_lex
@@ -57,11 +58,19 @@ FLEX_TABLES = ["yy_accept", "yy_ec", "yy_meta", "yy_base", "yy_def",
                "yy_nxt", "yy_chk"]
 
 
+TIMEOUT = 120          # seconds per command, set from --timeout
+
+
 def run(cmd, **kw):
+    """subprocess.run with a timeout. Returns None on timeout, else the
+    CompletedProcess with an extra attribute 'elapsed' (seconds)."""
+    t0 = time.perf_counter()
     try:
-        return subprocess.run(cmd, capture_output=True, timeout=120, **kw)
+        p = subprocess.run(cmd, capture_output=True, timeout=TIMEOUT, **kw)
     except subprocess.TimeoutExpired:
         return None
+    p.elapsed = time.perf_counter() - t0
+    return p
 
 
 def parse_arrays(src, prefix):
@@ -103,7 +112,7 @@ def first_error(text):
 def lxr_measure(lxr, lfile, cfile):
     p = run([lxr, "-o", cfile, lfile])
     if p is None:
-        return None, "lxr timeout"
+        return None, "lxr timeout (> %d s)" % TIMEOUT
     out = (p.stdout + p.stderr).decode(errors="replace")
     if p.returncode < 0 or p.returncode == 134:
         return None, "lxr: CRASH (signal %d) %s" % (
@@ -123,6 +132,7 @@ def lxr_measure(lxr, lfile, cfile):
         "classes": int(c.group(1)) - 4 if c else -1,   # minus EOB/EOL/EOF/BOL
         "trans": arr.get("check", ("", 0, []))[1],
         "bytes": nbytes(arr, LXR_TABLES),
+        "time": p.elapsed,
         "meta_bytes_unused": nbytes(arr, ["meta"]),
     }, None
 
@@ -146,6 +156,7 @@ def flex_measure(flex, mode, lfile, cfile):
         "meta": meta[1] - 1 if meta else 0,     # yy_meta[0] is unused
         "trans": arr.get("yy_nxt", ("", 0, []))[1],
         "bytes": nbytes(arr, FLEX_TABLES, ychar),
+        "time": p.elapsed,
         "warn": "cannot be matched" in err,
     }, None
 
@@ -192,9 +203,13 @@ def main():
     ap.add_argument("--no-check", action="store_true",
                     help="don't compare token streams of the two scanners")
     ap.add_argument("--input-size", type=int, default=4000)
+    ap.add_argument("--timeout", type=int, default=120,
+                    help="seconds allowed for each lxr / flex run")
     ap.add_argument("--out", default=os.path.join(HERE, "out"))
     ap.add_argument("--keep-c", action="store_true", help="keep generated .c files")
     args = ap.parse_args()
+    global TIMEOUT
+    TIMEOUT = args.timeout
 
     if shutil.which(args.flex) is None:
         sys.exit("flex not found (%s)" % args.flex)
@@ -228,7 +243,8 @@ def main():
             continue
         row = {"case": name, "rules": nrules or "-",
                "lxr_states": L["states"], "lxr_classes": L["classes"],
-               "lxr_trans": L["trans"], "lxr_bytes": L["bytes"]}
+               "lxr_trans": L["trans"], "lxr_bytes": L["bytes"],
+               "lxr_time": round(L["time"], 3)}
         fc_first, ok = None, True
         for mode in modes:
             fc = os.path.join(cases_dir, "%s.flex%s.c" % (name, mode))
@@ -243,6 +259,7 @@ def main():
             row["flex%s_meta" % mode] = Fm["meta"]
             row["flex%s_trans" % mode] = Fm["trans"]
             row["flex%s_bytes" % mode] = Fm["bytes"]
+            row["flex%s_time" % mode] = round(Fm["time"], 3)
         if not ok:
             continue
         if is_random and not args.no_check:
@@ -261,10 +278,11 @@ def main():
             os.remove(f)
 
     # ---------------------------------------------------------------- csv
-    keys = ["case", "rules", "lxr_states", "lxr_classes", "lxr_trans", "lxr_bytes"]
+    keys = ["case", "rules", "lxr_states", "lxr_classes", "lxr_trans",
+            "lxr_bytes", "lxr_time"]
     for m in modes:
         keys += ["flex%s_%s" % (m, k) for k in
-                 ("states", "classes", "meta", "trans", "bytes")]
+                 ("states", "classes", "meta", "trans", "bytes", "time")]
     keys.append("tokens")
     with open(os.path.join(args.out, "results.csv"), "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=keys)

@@ -9,6 +9,7 @@ make                      # 40 random sets (5..40 rules) + languages/*/*.lex
 make N=200 SEED=7         # more / other random sets
 make MODES=-Ce,-Cem,-Cf   # flex table modes to compare against
 make NOCHECK=1            # skip the token stream check
+make plot                 # docs/img/flex-comparison-{light,dark}.svg from out/results.csv
 make clean
 ```
 
@@ -57,6 +58,7 @@ on it. Typical reasons:
   tables, so `check[]`/`next[]` can't exceed `SHRT_MAX` entries (flex
   switches to 32-bit tables for such DFAs, typically with thousands of
   states)
-* *lxr timeout*: a very large DFA (over 10k states); lxr's Hopcroft
-  minimization is much slower than flex's at that size
+* *lxr timeout*: a very large DFA; lxr's Hopcroft minimization is much
+  slower than flex's at that size (`--timeout` sets the limit, default
+  120 s). Generation times are in `results.csv` (`lxr_time`, `flex*_time`).
 * *CRASH*: should not happen; it would be an lxr bug

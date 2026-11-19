@@ -38,7 +38,6 @@ null                                            { return J_NULL; }
 
 %%
 
-#ifdef JSON_LEX_TESTING
 int main (int argc, char ** argv)
 {
   /* user may pass a filename as an additional arguement or use stdin */
@@ -51,4 +50,3 @@ int main (int argc, char ** argv)
   }
   lxr_clean (); 
 }
-#endif

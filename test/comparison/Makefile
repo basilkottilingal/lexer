@@ -4,6 +4,7 @@
 #   make N=200 SEED=7          # more / other random sets
 #   make MODES=-Ce,-Cem,-Cf    # flex table modes to compare against
 #   make NOCHECK=1             # skip the token stream (same language) check
+#   make plot                  # README plots from out/results.csv
 #   make clean
 #
 # Results : out/report.md, out/results.csv, out/cases/*.l
@@ -24,9 +25,13 @@ ifdef NOCHECK
   ARGS += --no-check
 endif
 
-.PHONY: all compare lxr clean
+.PHONY: all compare plot lxr clean
 
 all: compare
+
+# light & dark SVG plots for README.md (docs/img/flex-comparison-*.svg)
+plot:
+	$(PYTHON) plot.py --csv out/results.csv --out $(ROOT)/docs/img
 
 # always delegate to the top level Makefile, so lxr is rebuilt if stale
 lxr:
