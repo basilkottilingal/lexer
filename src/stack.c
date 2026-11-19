@@ -82,13 +82,11 @@ int stack_cmp ( Stack * s1, Stack * s2 ) {
     return 1;
   if ( s1->len != s2->len )
     return 1;
-  uint64_t * a = (uint64_t *) s1->stack,
-    * b = (uint64_t *) s2->stack;
-  int i = s1->len >> 3;
-  while (i--) {
-    if ( a[i] != b[i] ) return 1;
-  }
-  return 0;                           /* "Equal" stacks */
+  /*
+  .. len is in bytes and need not be a multiple of 8 (see stack_bit),
+  .. so compare all the 'len' bytes, including the trailing bytes
+  */
+  return memcmp (s1->stack, s2->stack, s1->len) != 0;
 }
 
 /*

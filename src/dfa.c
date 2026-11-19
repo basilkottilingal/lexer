@@ -34,7 +34,11 @@ static int       nclass = 0;
 
 static DState * state ( Stack * list, Stack * bits, int * exists) {
   states_bstack (list, bits);
-  uint32_t hash = stack_hash ((uint32_t *) bits->stack, bits->max);
+  /*
+  .. Hash only "stacksize" bytes : bits->max may differ among stacks
+  .. (stacks recycled from the pool may be larger)
+  */
+  uint32_t hash = stack_hash ((uint32_t *) bits->stack, stacksize);
   DState ** ptr = & htable [hash % hsize], * d;
   *exists = 1;
   while ( (d = *ptr) != NULL ) {          /* resolve hash collision */
@@ -56,6 +60,21 @@ static DState * state ( Stack * list, Stack * bits, int * exists) {
 
 static DState * dfa_root ( State * nfa, int nnfa ) {
 
+  nstates = 0;                   /* fixme : Cleaned previous nodes? */
+  int n = 6, exists, primes[] = /* prime > 2^N for N in { 6, 7, .. }*/
+    { 67, 131, 257, 521, 1031, 2053, 4099, 8209, 16411 },
+    nprimes = (int) (sizeof (primes) / sizeof (primes[0]));
+  while ((1<<n) < nnfa && n - 6 < nprimes - 1) n++;
+  hsize = primes[ n - 6 ];
+  while (hsize * sizeof (void *) > PAGE_SIZE)       /* memory limit */
+    hsize = primes[ --n - 6 ];
+  htable = allocate ( hsize * sizeof (State *) );
+
+  /*
+  .. "stacksize" has to be set before creating the "bits" stack, which
+  .. should be able to hold "nnfa" bits
+  */
+  stacksize = BITBYTES (nnfa);        /* rounded as 64 bits multiple*/
   Stack * list = stack_new (0);
   Stack * bits = stack_new (stacksize);
   #define RTN(r) stack_free (list); stack_free (bits); return r
@@ -63,17 +82,11 @@ static DState * dfa_root ( State * nfa, int nnfa ) {
   State ** buff[RGXSIZE];
   int status = states_at_start ( nfa, list, buff );
 
-  if (status < 0) { RTN (NULL); }
+  if (status < 0) {
+    error ("dfa : failed creating root dfa state");
+    RTN (NULL);
+  }
 
-  nstates = 0;                   /* fixme : Cleaned previous nodes? */
-  int n = 6, exists, primes[] = /* prime > 2^N for N in { 6, 7, .. }*/
-    { 67, 131, 257, 521, 1031, 2053, 4099, 8209, 16411 };
-  while ((1<<n) < nnfa) n++;
-  stacksize = BITBYTES (nnfa);        /* rounded as 64 bits multiple*/
-  hsize = primes[ n - 6 ];
-  while (hsize * sizeof (void *) > PAGE_SIZE)       /* memory limit */
-    hsize = primes[ --n - 6 ];
-  htable = allocate ( hsize * sizeof (State *) );
   DState * root = state (list, bits, &exists);
   RTN (root);
 
@@ -337,8 +350,12 @@ hopcroft ( State * nfa, DState ** dfa, int nnfa, int ntokens ) {
   .. stored in the stack 'Q' (same as global variable 'states').
   */
   Stack * Q;
-  DState * root = dfa_root (nfa, nnfa); if (!nfa) return RGXERR;
-  if ( rgx_dfa_tree (root, &Q) < 0 || !Q )return RGXERR;
+  DState * root = dfa_root (nfa, nnfa); if (!root) return RGXERR;
+  if ( rgx_dfa_tree (root, &Q) < 0 || !Q ) {
+    error ("dfa : failed creating dfa states "
+      "(dfa too large or nfa has too many states?)");
+    return RGXERR;
+  }
   int nq = Q->len / sizeof (void *), qsize = BITBYTES(nq);
   DState ** q = (DState **) Q->stack, * next;
   #if 0
@@ -527,12 +544,13 @@ int rgx_list_dfa ( char ** rgx, int nr, DState ** dfa ) {
   int n, nt = 0;
   State * nfa = allocate ( sizeof (State) ),
     ** out = allocate ( (nr+1) * sizeof (State *) );
-  nfa_reset ( rgx, nr );
+  if ( nfa_reset ( rgx, nr ) < 0 )
+    return RGXERR;
   class_get ( &class, &nclass );
   for (int i=0; i<nr; ++i) {
     n = rgx_nfa (rgx[i], &out[i], 1);
     if ( n < 0 ) {
-      error ("rgx list nfa : cannot create nfa for rgx \"%s\"", rgx);
+      error ("rgx list nfa : cannot create nfa for rgx \"%s\"", rgx[i]);
       return RGXERR;
     }
     nt += n;
@@ -549,7 +567,8 @@ int rgx_lexer_dfa ( char ** rgx, int nr, DState ** dfa ) {
   int n, nt = 0;
   State * nfa = allocate ( sizeof (State) ),
     ** out = allocate ( (nr+2) * sizeof (State *) );
-  nfa_reset ( rgx, nr );
+  if ( nfa_reset ( rgx, nr ) < 0 )
+    return RGXERR;
   class_get ( &class, &nclass );
   for (int i=0; i<nr; ++i) {
     /*
@@ -557,7 +576,7 @@ int rgx_lexer_dfa ( char ** rgx, int nr, DState ** dfa ) {
     */
     n = rgx_nfa (rgx[i], &out[i], i+1);
     if ( n < 0 ) {
-      error ("rgx list nfa : cannot create nfa for rgx \"%s\"", rgx);
+      error ("rgx list nfa : cannot create nfa for rgx \"%s\"", rgx[i]);
       return RGXERR;
     }
     nt += n;
@@ -732,9 +751,13 @@ int dfa_tables (int *** tables, int ** tsize) {
   len [2] = len [3] = len [4] = m + 1;      /* can hold index : [m] */
   len [5] = n;  len [6] = 256;
 
-  int * base = allocate (m * sizeof (int)),
-    * accept = allocate (m * sizeof (int)),
-    * def = allocate (m * sizeof (int)),
+  /*
+  .. Rows (states) are numbered in [1, m] ( 0 is the DEAD state ), so
+  .. base[], accept[] and def[] need m+1 entries
+  */
+  int * base = allocate ((m+1) * sizeof (int)),
+    * accept = allocate ((m+1) * sizeof (int)),
+    * def = allocate ((m+1) * sizeof (int)),
     * meta = allocate (n * sizeof (int));
   /*
   .. Compressed tables, t[0] = check[], t[1] = next;

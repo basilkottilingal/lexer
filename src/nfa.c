@@ -60,15 +60,17 @@ static int   nclass = 0;
 .. (a) reset nfa_counter to 0
 .. (b) given a list of rgx, it pre evaluate equivalence classes
 */
-void nfa_reset ( char ** rgx, int nr ) {
+int nfa_reset ( char ** rgx, int nr ) {
 
   nfa_counter = 0;
 
   int csingle [256],                    /* For single char eq class */
+    inset [256],             /* chars in the character set [], [^..] */
     group [256],                      /* For charcter set [], [^..] */
     rpn [RGXSIZE],                                     /* RPN stack */
     err = 0;
   memset (csingle, 0, sizeof (csingle));
+  memset (inset, 0, sizeof (inset));
 
   #define ERRB(cond) if (cond) { err = 1; break; }
 
@@ -81,11 +83,15 @@ void nfa_reset ( char ** rgx, int nr ) {
   .. care at the end using class_char ().
   */
   class_init ();
-  for (int i=0; i<nr; ++i) {
-    rgx_rpn (rgx[i], rpn);
-    int j = 0, c, ng = 0, queue [4], nq = 0, charclass = 0;
-    while ( (c=rpn[j++]) >= 0 ) {
-      ERRB (err || nq == 4 || ng == 256);
+  for (int i=0; i<nr && !err; ++i) {
+    if (rgx_rpn (rgx[i], rpn) < 0) {
+      error ("nfa reset : cannot parse regex \"%s\"", rgx[i]);
+      err = 1;
+      break;
+    }
+    int j = 0, c, queue [4], nq = 0, charclass = 0;
+    while ( !err && (c=rpn[j++]) >= 0 ) {
+      ERRB (nq == 4);
       if (!ISRGXOP (c)) {
         if (charclass) {
           queue [nq++] = c;
@@ -96,25 +102,46 @@ void nfa_reset ( char ** rgx, int nr ) {
       }
       switch ( (c &= 0xFF) ) {
         case '[' :  case '<' :
-          ng = 0, charclass = 1;
+          memset (inset, 0, sizeof (inset));
+          charclass = 1;
           break;
         case '-' :
           ERRB (nq < 2);  /* need two operand to calculate range a-b*/
           int b = queue [--nq], a = queue[--nq];
-          for (int k=a; k<=b && ng < 256; ++k)
-            group [ng++] = k;
+          if (a > b) {
+            error ("rgx : reversed range \\x%02x-\\x%02x in \"%s\"",
+              a, b, rgx[i]);
+            err = 1;
+            break;
+          }
+          for (int k=a; k<=b; ++k)
+            inset [k] = 1;
           break;
         case ',' :
-          ERRB (nq > 2 || ng > 254);
           while (nq)
-            group [ng++] = queue[--nq];
+            inset [queue[--nq]] = 1;
           break;
-        case ']' : case '>' :
-          if (nq)
-            group [ng++] = queue[--nq];
-          ERRB (nq);
+        case ']' : case '>' : {
+          /*
+          .. Using a set (rather than appending to group[]) so that
+          .. duplicates like [a-za] or full range [\x00-\xff] are fine
+          */
+          while (nq)
+            inset [queue[--nq]] = 1;
+          int ng = 0;
+          for (int k=0; k<256; ++k)
+            if (inset [k])
+              group [ng++] = k;
           class_refine (group, ng);   /* refine for character class */
           charclass = 0;
+          break;
+        }
+        case 'q' :
+          /*
+          .. q{m,n} is encoded as 'q', '{', m, n, '}' in rpn. Skip the
+          .. counts m & n, so that they are not taken as literals.
+          */
+          j += 4;
           break;
         case '.' :
           csingle ['\n'] = 1;   /* single char equivalence for '\n' */
@@ -122,10 +149,16 @@ void nfa_reset ( char ** rgx, int nr ) {
         case 'd' : case 'D' :
         case 'w' : case 'W' :
         case 's' : case 'S' :
-          ERRB (1);                      /* fixme : not implemented */
+          error ("rgx : \\%c not yet implemented", (char) c);
+          err = 1;                       /* fixme : not implemented */
+          break;
       }
     }
-    ERRB (err);
+  }
+
+  if (err) {
+    error ("nfa reset : failed evaluating equivalence classes");
+    return RGXERR;
   }
 
   csingle ['\n'] = 1;                      /* force '\n' to a class */
@@ -133,12 +166,19 @@ void nfa_reset ( char ** rgx, int nr ) {
     if (csingle [c])   /* refine for each single character eq class */
       class_char ( c );
 
-  if (err) {
-    error ("nfa reset : unknown error in evaluating eq class");
-    return;
-  }
-
   class_get ( &class, &nclass );
+
+  /*
+  .. State ids in [0, nclass) are used for transitions by eq classes,
+  .. while NFAEPS (256) & NFAACC (257) are used for epsilon/accepting
+  .. states. So there cannot be more than 256 classes (including the
+  .. 4 special classes BOL, EOL, EOF, EOB)
+  */
+  if (nclass > NFAEPS) {
+    error ("nfa reset : too many equivalence classes (%d > %d)",
+      nclass, NFAEPS);
+    return RGXOOM;
+  }
 
   #if 0
   char buff[] = " ";
@@ -153,6 +193,7 @@ void nfa_reset ( char ** rgx, int nr ) {
   #endif
 
   #undef ERRB
+  return 0;
 }
 
 /*
@@ -300,11 +341,14 @@ static int rpn_backtrack (int * rpn, int qpos) {
         break;
 
       case '}' :
-        lookfor = RGXOP ('q');
-        do {
-          if (!qpos) return RGXERR;
-          c = rpn [--qpos];
-        } while (c != lookfor);
+        /*
+        .. q{m,n} is stored as 'q', '{', m, n, '}'. Jump directly to
+        .. 'q'. (Don't search for 'q', as the counts m, n are not
+        .. operators and shouldn't be compared with RGXOP ('q'))
+        */
+        if (qpos < 4 || rpn [qpos-4] != RGXOP ('q'))
+          return RGXERR;
+        qpos -= 4;
       case '+' : case '*' : case '?' :
         stack [depth++] = 1;          
         break;                              /* unary operator. PUSH */
@@ -330,7 +374,10 @@ typedef struct Quantifier {
 .. before q{m,n} in the rpn[] by backtracking ( rpn_backtrack () ).
 */
 Quantifier * quantifier (Quantifier ** root, int * rpn, int irpn) {
-  #define PUSH(_c_) if (len == RGXSIZE) return NULL;                 \
+  #define PUSH(_c_) if (len == RGXSIZE) {                            \
+      error ("rgx : quantifier {%d,%d} expansion too large", m, n);  \
+      return NULL;                                                   \
+    }                                                                \
     op[len++] = _c_
   Quantifier * Q;
   while ( (Q = *root) != NULL ) {
@@ -566,27 +613,38 @@ int states_add ( State * start, Stack * list, State *** stack) {
   .. We use the "buff" stack when we go down the nfa tree
   .. and thus avoid recusrive call
   */
-  State * s; int n = 0, tk, tkold = RGXMATCH (list);
-  stack[n++] = ( State * [] ) {start, NULL};
+  State * s, * root [2] = {start, NULL};
+  int n = 0, tk, tkold = RGXMATCH (list);
+  stack[n++] = root;
   while ( n ) {
+    /*
+    .. Each stack[] entry is a NULL terminated list of out transitions
+    .. of an epsilon state. POP() once the list is exhausted.
+    */
+    if ( (s = *stack[n-1]) == NULL ) {
+      --n;
+      continue;
+    }
+    stack[n-1]++;
+
+    /*
+    .. A state is marked as visited, before going down the tree. So
+    .. epsilon cycles like in (a*)* or a** are not followed again.
+    */
+    if ( s->counter == counter )
+      continue;
+    s->counter = counter;
+    stack_push ( list, s );
+    if (s->id == NFAACC) {
+      tk = state_token ( s );
+      tkold = tkold ? ( tk < tkold ? tk : tkold ) : tk;
+    }
+
     /* Go down the tree, if the State is an "NFAEPS" i.e epsilon */
-    while ( (s = *stack[n-1]) ) {
-      if ( s->id != NFAEPS || s->counter == counter ) break;
-      /* PUSH() to the stack */
+    if ( s->id == NFAEPS ) {
       if ( n < RGXSIZE ) stack[n++] = s->out;
       else return RGXOOM;
     }
-
-    /* POP() from the stack. Add the state to the list */
-    do {
-      s = *stack[n-1]++;
-      s->counter = counter;
-      stack_push ( list, s );
-      if (s->id == NFAACC) {
-        tk = state_token ( s );
-        tkold = tkold ? ( tk < tkold ? tk : tkold ) : tk;
-      }
-    } while ( *stack[n-1] == NULL && --n );
   }
   
   RGXMATCH(list) = tkold;
@@ -655,7 +713,10 @@ int states_bstack ( Stack * list, Stack * bits ) {
 }
 
 int rgx_match ( char * rgx, const char * txt ) {
-  nfa_reset (&rgx, 1);
+  if ( nfa_reset (&rgx, 1) < 0 ) {
+    error ("rgx match : regex error");
+    return RGXERR;
+  }
   State * nfa = NULL;
   if ( rgx_nfa (rgx, &nfa, 1) < 0 ) {
     error ("rgx match : regex error");

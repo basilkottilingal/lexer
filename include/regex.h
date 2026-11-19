@@ -81,6 +81,14 @@
     #define RGXSIZE 256
   #endif
 
+  /*
+  .. Maximum count allowed in quantifiers x{m,n}. It has to be < 256
+  .. so that the counts stored in rpn are never confused as operators
+  */
+  #ifndef RGXMAXREP
+    #define RGXMAXREP 255
+  #endif
+
   #define   RGXOP(_c_)     ((_c_) | 256)
   #define ISRGXOP(_c_)     ((_c_) & 256)
 
