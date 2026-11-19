@@ -29,6 +29,37 @@ options, e.g. `--lxr <binary>` to test another build.
 * flex `-Ce` (equivalence classes, no meta classes) is the fair comparison;
   `-Cem` is flex's default.
 
+## Scanning speed (`make bench`)
+
+`bench.py` compares how fast the generated scanners run. The same grammar
+is turned into a scanner by lxr and by flex (`-Cem` default, `-Ce`, and
+`-8 -Cf` full tables), all compiled with `gcc -O2`, and each one scans the
+same large input:
+
+| grammar | input |
+|---|---|
+| `languages/c99/c99.lex` | C source: preprocessed system headers + this repository's sources |
+| `languages/json/json.lex` | generated JSON (numbers, nested arrays/objects, escaped strings) |
+| random lexers (`--random`) | random text from `gen_lex.py` |
+
+Only the token loop is timed, inside the process. `IO=mem` (the default)
+reads the input into memory first and measures pure scanning;
+`IO=file` lets the scanner read the file itself. Runs are interleaved,
+pinned to one CPU with `taskset` when available, and the median is
+reported. Every scanner must produce the same token stream as lxr (count
+and hash of token ids and lengths); a difference is reported as MISMATCH.
+
+```sh
+make bench                       # 32 MB inputs, 5 runs
+make bench SIZE=64 RUNS=7 IO=both
+```
+
+Results go to `out/bench/bench.md` and `out/bench/bench.csv`.
+
+Note: flex `-Cf` / `-CF` build a 7-bit scanner unless `-8` is given,
+which mis-scans bytes >= 0x80 (for example UTF-8 in C comments). That is
+why the full-table mode is `-8 -Cf`.
+
 ## Same language check
 
 A size comparison only makes sense if both tools built the same scanner.
@@ -36,6 +67,11 @@ Every random set ends with catch-all `.` and `\n` rules, and both scanners
 are compiled and run on the same random input. The (token id, length)
 streams must be identical (`tokens = same`). Only matching cases are used in
 the size summary, and `make` exits with 1 if any case differs.
+
+The lxr scanner is also built with a 7-byte buffer (`-DLXR_BUFF_SIZE=7`),
+so that buffer refills happen inside almost every token; the default 16 kB
+buffer is never refilled by the small inputs. A difference there shows as
+`DIFF(buf7)`.
 
 ## Grammar subset
 

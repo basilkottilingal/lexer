@@ -86,7 +86,15 @@ char * yytext = & lxr_yytext_dummy [1];
 int    yyleng = 0;
 
 /*
-.. Current line number and columen number.
+.. Line and column numbers. They are updated only if line tracking is
+.. enabled ("%option yylineno" in the lex file, or LXR_YYLINENO defined),
+.. as in flex. Otherwise they stay at 1.
+.. - yylineno : as in flex. Inside an action, it already counts the
+..   newlines of the current token (and those read with lxr_input ()).
+.. - yycolno  : (not in flex) column where the current token starts.
 */
 int yylineno = 1;
 int yycolno = 1;
+#ifdef LXR_YYLINENO
+static int lxr_colno_next = 1;      /* column of the next unread byte */
+#endif

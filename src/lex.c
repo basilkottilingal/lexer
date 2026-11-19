@@ -388,6 +388,71 @@ static int macro_new (char * macro, char * pattern) {
   return 0;
 }
 
+/* ...................................................................
+.. ...................................................................
+.. .......................  %option  ..................................
+.. ...................................................................
+.. .................................................................*/
+
+/*
+.. Options set by "%option" in the definitions section
+*/
+static int opt_yylineno = 0;       /* track yylineno/yycolno (flex) */
+
+/*
+.. flex options that don't change anything in lxr. Accepted silently.
+*/
+static const char * opt_ignored [] = {
+  "noyywrap", "nounput", "noinput", "8bit", "never-interactive",
+  "nodefault", "batch", "warn", "nowarn", "noyy_top_state",
+  "noyy_push_state", "noyy_pop_state", "noyymore", NULL
+};
+
+/*
+.. Handle a line "%<directive> ..." of the definitions section (other
+.. than %{ and %%). "s" points to the character after '%'. Only %option
+.. is implemented; everything else is reported and ignored.
+*/
+static void lex_directive ( char * s ) {
+  char word [64];
+  int n = 0;
+  while ( *s && *s != '\n' && *s != ' ' && *s != '\t' && n < 63 )
+    word [n++] = *s++;
+  word [n] = '\0';
+
+  if ( strcmp (word, "option") ) {
+    error ("warning : %%%s not supported, ignored (line %d)", word, line);
+    return;
+  }
+
+  /* %option word1 word2 ... */
+  for (;;) {
+    while ( *s == ' ' || *s == '\t' ) s++;
+    if ( *s == '\0' || *s == '\n' ) break;
+    n = 0;
+    while ( *s && *s != '\n' && *s != ' ' && *s != '\t' ) {
+      if ( n < 63 ) word [n++] = *s;
+      s++;
+    }
+    word [n] = '\0';
+
+    if ( !strcmp (word, "yylineno") ) {
+      opt_yylineno = 1;
+      continue;
+    }
+    if ( !strcmp (word, "noyylineno") ) {
+      opt_yylineno = 0;
+      continue;
+    }
+    int known = 0;
+    for ( const char ** o = opt_ignored; *o; ++o )
+      if ( !strcmp (word, *o) ) { known = 1; break; }
+    if ( !known )
+      error ("warning : %%option %s not supported, ignored (line %d)",
+        word, line);
+  }
+}
+
 /*
 .. Read definition section in the lexer file. The beginning section
 .. until first ^%%, is called the definition where you define regex
@@ -461,8 +526,8 @@ int lex_read_definitions () {
       }
       if (c == '%')          /* %% is the end of definition section */
         return 0;
-      error ("warning : unknown/unimplemented in line %d", line);
-      continue;  /* Other % option, %top {}, etc .. not implemented */
+      lex_directive (ptr - 1);   /* %option .., %x, %top, etc .. */
+      continue;
     }
 
     /*
@@ -1101,6 +1166,13 @@ int read_lex_input ( const char * _in_, const char * _out_ ) {
   }
 
   errors ();                  /* Flush any warnings to stderr*/
+
+  /*
+  .. Options that the generated code needs. Written before the user's
+  .. %{ %} code, so that the user can still override them there.
+  */
+  if (opt_yylineno)
+    echo ("\n#define LXR_YYLINENO 1  /* %option yylineno */\n");
 
   lex_print_snippets ();
 

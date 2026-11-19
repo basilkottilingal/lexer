@@ -5,6 +5,7 @@
 #   make MODES=-Ce,-Cem,-Cf    # flex table modes to compare against
 #   make NOCHECK=1             # skip the token stream (same language) check
 #   make plot                  # README plots from out/results.csv
+#   make bench                 # scanning speed, see bench.py
 #   make clean
 #
 # Results : out/report.md, out/results.csv, out/cases/*.l
@@ -25,9 +26,18 @@ ifdef NOCHECK
   ARGS += --no-check
 endif
 
-.PHONY: all compare plot lxr clean
+.PHONY: all compare plot bench lxr clean
 
 all: compare
+
+# scanning speed : lxr vs flex (out/bench/bench.md)
+#   make bench SIZE=64 RUNS=7 IO=both
+SIZE ?= 32
+RUNS ?= 5
+IO   ?= mem
+bench: lxr
+	$(PYTHON) bench.py --lxr $(LXR) --flex $(FLEX) --size $(SIZE) \
+	  --runs $(RUNS) --io $(IO) --seed $(SEED)
 
 # light & dark SVG plots for README.md (docs/img/flex-comparison-*.svg)
 plot:

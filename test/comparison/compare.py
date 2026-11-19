@@ -164,18 +164,28 @@ def flex_measure(flex, mode, lfile, cfile):
 def check_same(lxr_c, flex_c, workdir, rng, size):
     """Compile both scanners, run them on the same random input and
     compare (token id, token length) streams."""
-    exe_l, exe_f = os.path.join(workdir, "l.out"), os.path.join(workdir, "f.out")
-    for c, e in ((lxr_c, exe_l), (flex_c, exe_f)):
-        p = run(["gcc", "-w", "-O1", "-o", e, c])
+    """The lxr scanner is also built with a tiny buffer (LXR_BUFF_SIZE=7),
+    so that buffer refills happen inside almost every token : the default
+    16 kB buffer is never refilled by the small random inputs."""
+    exe_l = os.path.join(workdir, "l.out")
+    exe_s = os.path.join(workdir, "s.out")
+    exe_f = os.path.join(workdir, "f.out")
+    for c, e, extra in ((lxr_c, exe_l, []), (lxr_c, exe_s, ["-DLXR_BUFF_SIZE=7"]),
+                        (flex_c, exe_f, [])):
+        p = run(["gcc", "-w", "-O1"] + extra + ["-o", e, c])
         if p is None or p.returncode:
             return "compile-fail"
     data = gen_lex.random_input(rng, size)
-    a, b = run([exe_l], input=data), run([exe_f], input=data)
-    if a is None or b is None:
+    a, s, b = (run([e], input=data) for e in (exe_l, exe_s, exe_f))
+    if a is None or s is None or b is None:
         return "timeout"
     if a.returncode != b.returncode:
         return "rc-differs"
-    return "same" if a.stdout == b.stdout else "DIFF"
+    if a.stdout != b.stdout:
+        return "DIFF"
+    if s.returncode != b.returncode or s.stdout != b.stdout:
+        return "DIFF(buf7)"
+    return "same"
 
 
 def geomean(xs):
@@ -272,7 +282,7 @@ def main():
         if not args.keep_c:
             for f in glob.glob(os.path.join(cases_dir, name + ".*.c")):
                 os.remove(f)
-    for f in ("l.out", "f.out"):
+    for f in ("l.out", "s.out", "f.out"):
         f = os.path.join(cases_dir, f)
         if os.path.exists(f):
             os.remove(f)

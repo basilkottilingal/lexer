@@ -24,8 +24,11 @@ void lxr_clean      ( );
 int lxr_lex (void)
 ```
 
-  **v2.0** fixes 20+ generator bugs, including mis-tokenizing scanners from
-  v1.0 (regenerate your lexers). See the [CHANGELOG](CHANGELOG.md) and the
+  **v2.1** fixes 4 bugs in the generated scanner (regenerate your lexers),
+  makes scanners faster (slightly faster than flex's default on C), and adds
+  `%option yylineno`; line numbers are now off by default, as in flex.
+  **v2.0** fixed 20+ generator bugs, including mis-tokenizing scanners from
+  v1.0. See the [CHANGELOG](CHANGELOG.md) and the
   [comparison with flex](#comparison-with-flex).
 
 # Tokenizer or Lexer reader
@@ -55,7 +58,11 @@ rules
 user code
 ```
   There are few exceptions
-  1. flex options will be ignored
+  1. Of the flex options, only `%option yylineno` is implemented (see
+     below). Options that make no difference to lxr (`noyywrap`,
+     `nounput`, `noinput`, `8bit`, `never-interactive`, `nodefault`,
+     `batch`, ...) are accepted silently. Other options and other `%`
+     directives (`%x`, `%s`, `%top`, ...) are ignored with a warning.
   2. The OR operator as in the following cases are not-implemented
 ```lex
 %%
@@ -71,6 +78,21 @@ user code
 %%
 ```
 
+### Line numbers
+
+  As in flex, line tracking is off by default (it costs time on every
+  token). Turn it on with
+
+```lex
+%option yylineno
+```
+
+  or by defining `LXR_YYLINENO` (in a `%{ %}` block, or `cc -DLXR_YYLINENO`).
+  Then `yylineno` behaves as in flex: inside an action it already counts
+  the newlines of the current token, and of bytes read with `lxr_input ()`.
+  lxr also provides `yycolno`, the column where the current token starts.
+  Without the option, both stay at 1.
+
 ### Regex
 
   1. Support most of POSIX ERE symbols in the lexer grammar.
@@ -80,7 +102,7 @@ user code
 | -------- | ------------ | ----------------------------------------------------------------------- |
 | `.`      | Dot  | Matches **any single character** except newline (`\n`)                          |
 | `^`      | Beginning anchor | Matches the **start of a line**                                     |
-| `$`      | End anchor   | Matches the **end of a line**                                           |
+| `$`      | End anchor   | Matches the **end of a line** or of the file (flex: line only; see note) |
 | `[...]`  | Character class  | Matches **any one character** in the set                            |
 | `[^...]` | Negated character class  | Matches **any one character not** in the set                |
 | `\|`     | Alternation  | Matches **either of the pattern** before o after `\|` in the current group |
@@ -95,6 +117,12 @@ user code
 | `\`      | Escape | Removes special meaning from the next character (e.g., `\.` matches a literal `.`) |
 
   3. Additionally uses quotes (ex : `"foo"`) for string matching as in flex
+
+  Note on `$`: in flex, `abc$` is trailing context (`abc/\n`), so the `\n`
+  counts in the match length and `abc$` beats an earlier rule `abc` for
+  `abc\n`. In lxr, `$` is a zero-width check: both match 3 characters and
+  the earlier rule wins. lxr's `$` also matches at end of file.
+
   4. NOTE : DOESN'T support any kind of pattern lookahead assertions.
 ```lex
 foo/bar    { /* foo is followed by bar */ }
@@ -219,10 +247,11 @@ Proceedings of the 3rd Annual ACM Symposium on Theory of Computing (STOC), 1971,
 | `rand_s1_064` | 5881   | 0.26 s | 30 s ¹ |
 | `rand_s1_051` | 6797   | 0.33 s | 39 s ¹ |
 | `rand_s1_040` | 14060  | 1.8 s  | 226 s ¹ |
-| `rand_s1_080` | ?      | > 2 min ² | > 2 min ² |
+| `rand_s1_080` | 665708 | 711 s  | > 1 h ² |
 
   ¹ lxr then stops with *Out of table size limit 32767* (ToDo 4).
-  ² stopped after 2 min; flex is slow on this one too.
+  ² stopped after 1 hour (3 GB of memory used). This one is huge for flex
+  too.
 
   To get a case: `cd test/comparison && make N=100 SEED=1`; the lexer is
   `out/cases/<case>.l`.

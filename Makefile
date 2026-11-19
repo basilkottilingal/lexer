@@ -37,7 +37,9 @@ obj/rgx.a: $(OBJ) Makefile
 obj/lexer.o: src/lexer.c include/regex.h include/lexer.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
-obj/lxr.o:src/lxr/stringified.h
+# src/lex.c embeds the generated scanner sources (src/lxr/*.c) through
+# stringified.h : rebuild it whenever they change
+obj/lex.o: src/lxr/stringified.h
 
 obj/lxr.a: $(OBJ) $(LOBJ) Makefile
 	ar -cr $@ $(OBJ) $(LOBJ)

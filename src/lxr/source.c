@@ -63,9 +63,10 @@ void lxr_read_bytes (const char * bytes, size_t len, int eob) {
     exit (-1);
   }
   bf->bytes = b;
+  bf->size  = size;    /* used when the buffer is grown (realloc) */
   bf->next = lxr_buff_stack_current;
   lxr_buff_stack_current = bf;
-  if (eob) b [0] = '\n';
+  b [0] = eob ? '\n' : '\0';     /* yytext [-1] : decides BOL status */
   yytext = & b [1];
   yyleng = 0;
   memcpy (yytext, bytes, size);
@@ -141,8 +142,17 @@ int lxr_input () {
     return EOF;
 
   size_t idx = lxr_bptr++ - lxr_start;
-  return (int) (unsigned char) 
+  int c = (int) (unsigned char)
    ( ((size_t) yyleng == idx) ? lxr_hold_char : yytext [idx] );
+  #ifdef LXR_YYLINENO
+  if (c == '\n') {
+    yylineno++;
+    lxr_colno_next = 1;
+  }
+  else
+    lxr_colno_next++;
+  #endif
+  return c;
 }
 
 /*
@@ -154,8 +164,19 @@ int lxr_input () {
 int lxr_unput () {
   if ( (size_t) (lxr_bptr - lxr_start) > 0) {
     size_t idx = (--lxr_bptr) - lxr_start;
-    return (int) (unsigned char) 
+    int c = (int) (unsigned char)
       ( ((size_t) yyleng == idx) ? lxr_hold_char : yytext [idx] );
+    #ifdef LXR_YYLINENO
+    /*
+    .. as in flex, un-reading a newline decrements yylineno. (The column
+    .. after un-reading a newline is not known : it is left unchanged)
+    */
+    if (c == '\n')
+      yylineno--;
+    else if (lxr_colno_next > 1)
+      lxr_colno_next--;
+    #endif
+    return c;
   }
   return EOF;               /*error : cannot undo beyond last token */
 }

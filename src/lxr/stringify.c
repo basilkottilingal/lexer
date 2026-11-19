@@ -221,10 +221,18 @@ char * yytext = & lxr_yytext_dummy [1];
 int    yyleng = 0;
 
 /*
-.. Current line number and columen number.
+.. Line and column numbers. They are updated only if line tracking is
+.. enabled ("%option yylineno" in the lex file, or LXR_YYLINENO defined),
+.. as in flex. Otherwise they stay at 1.
+.. - yylineno : as in flex. Inside an action, it already counts the
+..   newlines of the current token (and those read with lxr_input ()).
+.. - yycolno  : (not in flex) column where the current token starts.
 */
 int yylineno = 1;
 int yycolno = 1;
+#ifdef LXR_YYLINENO
+static int lxr_colno_next = 1;      /* column of the next unread byte */
+#endif
 
 
 /*
@@ -290,9 +298,10 @@ void lxr_read_bytes (const char * bytes, size_t len, int eob) {
     exit (-1);
   }
   bf->bytes = b;
+  bf->size  = size;    /* used when the buffer is grown (realloc) */
   bf->next = lxr_buff_stack_current;
   lxr_buff_stack_current = bf;
-  if (eob) b [0] = '\n';
+  b [0] = eob ? '\n' : '\0';     /* yytext [-1] : decides BOL status */
   yytext = & b [1];
   yyleng = 0;
   memcpy (yytext, bytes, size);
@@ -368,8 +377,17 @@ int lxr_input () {
     return EOF;
 
   size_t idx = lxr_bptr++ - lxr_start;
-  return (int) (unsigned char) 
+  int c = (int) (unsigned char)
    ( ((size_t) yyleng == idx) ? lxr_hold_char : yytext [idx] );
+  #ifdef LXR_YYLINENO
+  if (c == '\n') {
+    yylineno++;
+    lxr_colno_next = 1;
+  }
+  else
+    lxr_colno_next++;
+  #endif
+  return c;
 }
 
 /*
@@ -381,8 +399,19 @@ int lxr_input () {
 int lxr_unput () {
   if ( (size_t) (lxr_bptr - lxr_start) > 0) {
     size_t idx = (--lxr_bptr) - lxr_start;
-    return (int) (unsigned char) 
+    int c = (int) (unsigned char)
       ( ((size_t) yyleng == idx) ? lxr_hold_char : yytext [idx] );
+    #ifdef LXR_YYLINENO
+    /*
+    .. as in flex, un-reading a newline decrements yylineno. (The column
+    .. after un-reading a newline is not known : it is left unchanged)
+    */
+    if (c == '\n')
+      yylineno--;
+    else if (lxr_colno_next > 1)
+      lxr_colno_next--;
+    #endif
+    return c;
   }
   return EOF;               /*error : cannot undo beyond last token */
 }
@@ -515,10 +544,24 @@ static void lxr_buffer_update () {
 #define lxr_max_depth                        1
 #define lxr_dead                             0
 #define lxr_not_rejected(s)                  (s)          /* s != 0 */
-#ifndef lxr_state_stack_size 
-#define lxr_state_stack_size                 128
-#endif
-#define lxr_clear_stack()           stack_idx = lxr_state_stack_size
+
+/*
+.. _s_ <- transition of state _s_ by class _c_ (lxr_dead if none).
+.. Look for the transition in [base, base + nclass) using check/next
+.. tables; if it is not there, use the fallback (def). The transition
+.. is DEAD once the number of fallbacks reaches lxr_max_depth.
+.. (No meta class as of now.)
+*/
+#define lxr_next_state(_s_, _c_)                                     \
+  do {                                                               \
+    int _depth_ = 0;                                                 \
+    while ( lxr_not_rejected (_s_) &&                                \
+      ((int) lxr_check [lxr_base [_s_] + (_c_)] != (_s_)) )          \
+      (_s_) = (_depth_++ == lxr_max_depth) ? lxr_dead :              \
+        (int) lxr_def [_s_];                                         \
+    if ( lxr_not_rejected (_s_) )                                    \
+      (_s_) = (int) lxr_next [lxr_base [_s_] + (_c_)];               \
+  } while (0)
 
 /*
 .. The main lexer function. Returns 0, when EOF is encountered. So,
@@ -526,105 +569,75 @@ static void lxr_buffer_update () {
 */
 YY_DECL
 {
-  static int states [lxr_state_stack_size];
+  int state, class, acc_token, acc_len, token;
+  #if lxr_eol_class
+  int eol;
+  #endif
+  #ifdef LXR_YYLINENO
   unsigned char * cls;
-  int state, class, acc_token, acc_len, stack_idx,
-    depth, token,
-    #if lxr_eol_class
-    eol,
-    #endif
-    acc_len_old, acc_token_old, state_old;
+  #endif
 
   #define lxr_tokenizer_init()                                       \
     do {                                                             \
       yytext [yyleng] = lxr_hold_char;                               \
       acc_len = (int) (lxr_bptr - lxr_start);                        \
       yytext += acc_len;                                             \
-      for (; acc_len; --acc_len) {                                   \
-        if (*lxr_start++ == lxr_nel_class) {                         \
-          yycolno = 1;                                               \
-          yylineno++;                                                \
-          continue;                                                  \
-        }                                                            \
-        yycolno++;                                                   \
-      }                                                              \
+      lxr_start += acc_len;                                          \
       state = 1 + (yytext [-1] == '\n');                             \
-      acc_token = 0;                                                 \
-      lxr_clear_stack();                                             \
-    } while (0) 
+      acc_token = acc_len = 0;                                       \
+    } while (0)
 
   lxr_tokenizer_init();
-  do {                  /* Loop looking the longest token until EOF */
+  for (;;) {            /* Loop looking the longest token until EOF */
 
-    /* in case to back up */
-    acc_len_old = acc_len;
-    acc_token_old = acc_token;
-    state_old = state;
-    
-    do {                            /* Transition loop until reject */
-      class = (int) *lxr_bptr++;
-      states [--stack_idx] = state;         /* Keep stack of states */
+    /*
+    .. Transition loop, until the automaton rejects. After consuming
+    .. (lxr_bptr - lxr_start) bytes, the automaton is in "state". As
+    .. in flex, the last accepting state seen so far is remembered in
+    .. (acc_len, acc_token), so that the longest token is known when
+    .. the automaton rejects. (In case two patterns match the longest
+    .. token, the accept table already gives the first token defined
+    .. in the lexer file.)
+    */
+    for (;;) {
+      class = (int) *lxr_bptr;
 
       /*
-      .. find the transition corresponding to the class using check/
-      .. next tables and if not found in [base, base + nclass), use
-      .. the fallback.Note: (a) No meta class as of now. (b) assumes
-      .. transition is DEAD if number of fallbacks reaches max_depth
+      .. End of buffer : read more input and go on from the same state.
+      .. (The bytes from lxr_start are kept, at the same offsets.)
       */
-      depth = 0;
-      while ( lxr_not_rejected (state) && 
-        ((int) lxr_check [lxr_base [state] + class] != state) ) {
-        state = (depth++ == lxr_max_depth) ? lxr_dead : 
-          (int) lxr_def [state];
+      if (class == lxr_eob_class) {
+        lxr_buffer_update ();
+        continue;
       }
 
-      if ( lxr_not_rejected (state) )
-        state = (int) lxr_next [lxr_base[state] + class];
+      if ( (token = lxr_accept [state]) ) {
+        acc_token = token;
+        acc_len = (int) (lxr_bptr - lxr_start);
+      }
 
-    } while ( lxr_not_rejected (state) && stack_idx );
-
-    cls = lxr_bptr - 1;
-    while (stack_idx < lxr_state_stack_size) {
       /*
-      .. (a) "acc_token" will be the longest token
-      .. (b) In case two patterns are matched for the longest token,
-      .. use the first token defined in the lexer file.
-      .. (c) NOTE : in case no pattern use the EOL anchor '$', the
-      .. following optional snippet will be skipped.
+      .. EOL anchor '$' : before a newline (or EOF), the EOL transition
+      .. may accept a pattern like "abc$". Take it, unless a pattern
+      .. defined before it already accepts at this position. (Skipped,
+      .. if no pattern uses '$')
       */
       #if lxr_eol_class
-      if ( *cls == lxr_eof_class || *cls == lxr_nel_class ) {
-        eol = states [stack_idx];
-        depth = 0;
-        while ( lxr_not_rejected (eol) && 
-          ((int) lxr_check [lxr_base [eol] + lxr_eol_class] != eol)) {
-          eol = (depth++ == lxr_max_depth) ? lxr_dead : 
-            (int) lxr_def [eol];
-        }
-
-        if ( lxr_not_rejected (eol) ) {
-          eol = (int) lxr_next [lxr_base[eol] + lxr_eol_class];
-          if ((token = lxr_accept [eol])
-            && token < lxr_accept [states [stack_idx]])
-          {
-            acc_len = cls - lxr_start;
-            acc_token = token;
-            break;
-          }
+      if ( class == lxr_nel_class || class == lxr_eof_class ) {
+        eol = state;
+        lxr_next_state (eol, lxr_eol_class);
+        if ( lxr_not_rejected (eol) && (token = lxr_accept [eol]) &&
+          ( !lxr_accept [state] || token < lxr_accept [state] ) ) {
+          acc_token = token;
+          acc_len = (int) (lxr_bptr - lxr_start);
         }
       }
       #endif
-      if ( (token = lxr_accept [states [stack_idx++]]) ) {
-        acc_len = cls - lxr_start;
-        acc_token = token;
-        break;
-      }
-      --cls;
-    }
 
-    if (lxr_not_rejected (state)) {
-      lxr_clear_stack ();
-      continue;
+      lxr_next_state (state, class);
+      if ( !lxr_not_rejected (state) )
+        break;
+      lxr_bptr++;
     }
 
     /*
@@ -635,6 +648,25 @@ YY_DECL
     lxr_bptr = lxr_start + acc_len;
     lxr_hold_char = yytext [acc_len];
     yytext [acc_len] = '\0';
+
+    /*
+    .. Optional line & column tracking (as in flex, "%option yylineno"
+    .. or LXR_YYLINENO). Newlines of the token are counted before its
+    .. action runs. (Bytes read by lxr_input () are counted there.)
+    */
+    #ifdef LXR_YYLINENO
+    if (acc_token != lxr_eof_accept) {
+      yycolno = lxr_colno_next;
+      for (cls = lxr_start; cls < lxr_bptr; ++cls) {
+        if (*cls == lxr_nel_class) {
+          yylineno++;
+          lxr_colno_next = 1;
+        }
+        else
+          lxr_colno_next++;
+      }
+    }
+    #endif
 
     /*
     .. handling accept/reject. In case of accepting, corresponding
@@ -716,17 +748,12 @@ YY_DECL
           break;
 
 
-# line 720 "stringify.c"
+# line 752 "stringify.c"
 
         case lxr_eof_accept :
           lxr_bptr = lxr_start;
           yyleng = 0;
           return 0;
-
-        case lxr_eob_accept :
-          lxr_bptr --;
-          lxr_buffer_update ();
-          break;
 
         default :
           fprintf (stderr, "internal error : unknown accept state");
@@ -735,23 +762,8 @@ YY_DECL
       }
     } while (0);
 
-    if (acc_token != lxr_eob_accept) {
-      lxr_tokenizer_init ();           /* start reading a new token */
-      continue;
-    }
-
-    /*
-    .. In case of EOB, we have to restart from the last state before
-    .. the lxr_eob_class transition. Reset acc_len and acc_token to
-    .. their backup ( In case there is no accepting state in the stack
-    .. "states [] ". )
-    */
-    state = (stack_idx == lxr_state_stack_size) ? 
-      state_old : states [stack_idx];
-    acc_len = acc_len_old;
-    acc_token = acc_token_old;
-
-  } while (1);
+    lxr_tokenizer_init ();             /* start reading a new token */
+  }
 
   return EOF;                     /* The code will never reach here */
 }
