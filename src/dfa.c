@@ -780,14 +780,13 @@ int dfa_tables (int *** tables, int ** tsize) {
   */
   int * base = allocate ((m+1) * sizeof (int)),
     * accept = allocate ((m+1) * sizeof (int)),
-    * def = allocate ((m+1) * sizeof (int)),
-    * meta = allocate (n * sizeof (int));
+    * def = allocate ((m+1) * sizeof (int));
   /*
   .. Compressed tables, t[0] = check[], t[1] = next;
   .. will be set inside row_compression ().
   */
   t [2] = base;   t [3] = accept;   t [4] = def;
-  t [5] = meta;   t [6] = class;
+  t [5] = NULL;   t [6] = class;      /* meta [] : set if templates */
 
   /*
   .. Will return the compressed linear tables, if it didn't
@@ -805,6 +804,9 @@ int dfa_tables (int *** tables, int ** tsize) {
     "\n  no: of eq class %3d (excluding EOF, EOL, BOL, EOB)"
     "\n  table sizes     %3d (check[], next[])"
     "\n", nstates, num_actions, nclass - BCLASSES, len[0] ); 
+  if (rows_ntemplates ())
+    printf ("  templates       %3d (%d meta classes)\n",
+      rows_ntemplates (), rows_nmeta ());
   #endif
 
   return 0;

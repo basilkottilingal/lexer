@@ -5,15 +5,14 @@ Table size comparison : flex vs lxr (this lexer generator).
 For each random lexer set (see gen_lex.py) and for the grammars given
 with --extra (default : ../../languages/*/*.lex), the script runs
 
-  lxr  -o case.lxr.c        case.l
+  lxr  <--lxr-flags> -o case.lxr.c  case.l
   flex -v <MODE> -o case.c  case.l      for each MODE in --modes
 
 and parses the generated tables.
 
   lxr  tables : lxr_check, lxr_next, lxr_base, lxr_accept, lxr_def,
-                lxr_class.  lxr_meta is NOT counted : lxr emits it,
-                but it is never used (lxr has no meta equivalence
-                classes).
+                lxr_class, and lxr_meta (only emitted with meta
+                classes, "--lxr-flags=-m").
   flex tables : yy_accept, yy_ec, yy_meta, yy_base, yy_def, yy_nxt,
                 yy_chk (whatever the MODE generates).
 
@@ -53,7 +52,8 @@ ELEM_SIZE = {
     "short": 2, "flex_int16_t": 2, "flex_int32_t": 4, "int": 4,
     "unsigned char": 1, "char": 1, "flex_uint8_t": 1, "YY_CHAR": 1,
 }
-LXR_TABLES = ["check", "next", "base", "accept", "def", "class"]
+LXR_TABLES = ["check", "next", "base", "accept", "def", "class", "meta"]
+LXR_FLAGS = []         # set from --lxr-flags
 FLEX_TABLES = ["yy_accept", "yy_ec", "yy_meta", "yy_base", "yy_def",
                "yy_nxt", "yy_chk"]
 
@@ -110,7 +110,7 @@ def first_error(text):
 
 
 def lxr_measure(lxr, lfile, cfile):
-    p = run([lxr, "-o", cfile, lfile])
+    p = run([lxr] + LXR_FLAGS + ["-o", cfile, lfile])
     if p is None:
         return None, "lxr timeout (> %d s)" % TIMEOUT
     out = (p.stdout + p.stderr).decode(errors="replace")
@@ -133,7 +133,6 @@ def lxr_measure(lxr, lfile, cfile):
         "trans": arr.get("check", ("", 0, []))[1],
         "bytes": nbytes(arr, LXR_TABLES),
         "time": p.elapsed,
-        "meta_bytes_unused": nbytes(arr, ["meta"]),
     }, None
 
 
@@ -215,11 +214,14 @@ def main():
     ap.add_argument("--input-size", type=int, default=4000)
     ap.add_argument("--timeout", type=int, default=120,
                     help="seconds allowed for each lxr / flex run")
+    ap.add_argument("--lxr-flags", default="",
+                    help="extra lxr flags, ex : --lxr-flags=-m (meta classes)")
     ap.add_argument("--out", default=os.path.join(HERE, "out"))
     ap.add_argument("--keep-c", action="store_true", help="keep generated .c files")
     args = ap.parse_args()
-    global TIMEOUT
+    global TIMEOUT, LXR_FLAGS
     TIMEOUT = args.timeout
+    LXR_FLAGS = args.lxr_flags.split()
 
     if shutil.which(args.flex) is None:
         sys.exit("flex not found (%s)" % args.flex)
@@ -353,7 +355,7 @@ def main():
             ["  %-16s %s" % s for s in skipped]
     summary += ["", "Notes:",
                 "  - bytes = sum over tables of (entries x C element size)",
-                "  - lxr: check next base accept def class (lxr_meta is unused, not counted)",
+                "  - lxr: check next base accept def class, and meta (only with meta classes)",
                 "  - flex: yy_accept yy_ec yy_meta yy_base yy_def yy_nxt yy_chk",
                 "  - st = DFA states as reported by each tool (flex -v; lxr stats)",
                 "  - ec = equivalence classes (lxr: excluding its 4 special classes)",

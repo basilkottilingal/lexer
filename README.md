@@ -24,6 +24,8 @@ void lxr_clean      ( );
 int lxr_lex (void)
 ```
 
+  **v2.2** adds optional meta equivalence classes (`%option meta-ecs` or
+  `lxr -m`): smaller tables, slower scanner.
   **v2.1** fixes 4 bugs in the generated scanner (regenerate your lexers),
   makes scanners faster (slightly faster than flex's default on C), and adds
   `%option yylineno`; line numbers are now off by default, as in flex.
@@ -58,8 +60,8 @@ rules
 user code
 ```
   There are few exceptions
-  1. Of the flex options, only `%option yylineno` is implemented (see
-     below). Options that make no difference to lxr (`noyywrap`,
+  1. Of the flex options, only `%option yylineno` and `%option meta-ecs`
+     are implemented (see below). Options that make no difference to lxr (`noyywrap`,
      `nounput`, `noinput`, `8bit`, `never-interactive`, `nodefault`,
      `batch`, ...) are accepted silently. Other options and other `%`
      directives (`%x`, `%s`, `%top`, ...) are ignored with a warning.
@@ -92,6 +94,27 @@ user code
   the newlines of the current token, and of bytes read with `lxr_input ()`.
   lxr also provides `yycolno`, the column where the current token starts.
   Without the option, both stay at 1.
+
+### Meta equivalence classes (smaller tables)
+
+  Optional, as flex's `-Cm`: with
+
+```lex
+%option meta-ecs
+```
+
+  or `lxr -m`, lxr adds a few *template* rows to the tables. A template
+  sends a set of classes to a single state (for example every identifier
+  character to the identifier state). Many states then store only how they
+  differ from a template. The template rows are indexed by *meta classes*,
+  which group the classes that no template tells apart, so they are short.
+
+  The tables get smaller (`c99.lex`: 4544 B to 3816 B; 11% smaller on
+  average for random lexers, never bigger: lxr keeps the plain tables if
+  templates don't help). The scanner is slower (7% on JSON, 13% on C,
+  up to 33% on random lexers), because a transition can now fall back
+  twice (state, then template) instead of once. See the
+  [comparison with flex](#comparison-with-flex).
 
 ### Regex
 
@@ -150,25 +173,26 @@ foo(?!bar) { /* foo is not followed by bar */ }
   <img alt="Log-log scatter of table sizes: lxr bytes against flex bytes for each lexer. Most points lie below the y = x line, i.e. lxr tables are smaller, more so for large lexers." src="docs/img/flex-comparison-light.svg" width="720">
 </picture>
 
-| Lexer | lxr | flex `-Ce` | lxr / flex `-Ce` | flex `-Cem` (default) | lxr / flex `-Cem` |
-|---|---:|---:|---:|---:|---:|
-| `languages/c99/c99.lex`   | 4544 B | 6018 B | 0.76 | 4031 B | 1.13 |
-| `languages/json/json.lex` | 1218 B | 1380 B | 0.88 | 1084 B | 1.12 |
-| `languages/test/lexer.lex` | 488 B | 526 B | 0.93 | 506 B | 0.96 |
-| 46 random lexers (geometric mean)      | | | **0.76** | | **0.84** |
-| &emsp;flex `-Ce` tables < 5 kB (15)    | | | 0.92 | | 1.03 |
-| &emsp;5 – 50 kB (21)                   | | | 0.78 | | 0.88 |
-| &emsp;> 50 kB (10)                     | | | 0.53 | | 0.56 |
+| Lexer | lxr | flex `-Ce` | lxr / flex `-Ce` | lxr `-m` | flex `-Cem` (default) | lxr `-m` / flex `-Cem` |
+|---|---:|---:|---:|---:|---:|---:|
+| `languages/c99/c99.lex`   | 4544 B | 6018 B | 0.76 | 3816 B | 4031 B | 0.95 |
+| `languages/json/json.lex` | 1218 B | 1380 B | 0.88 | 1179 B | 1084 B | 1.09 |
+| `languages/test/lexer.lex` | 488 B | 526 B | 0.93 | 488 B | 506 B | 0.96 |
+| 46 random lexers (geometric mean)      | | | **0.76** | | | **0.74** |
+| &emsp;flex `-Ce` tables < 5 kB (15)    | | | 0.92 | | | 0.94 |
+| &emsp;5 – 50 kB (21)                   | | | 0.78 | | | 0.77 |
+| &emsp;> 50 kB (10)                     | | | 0.53 | | | 0.49 |
 
-  lxr tables are smaller than flex `-Ce` (equivalence classes, no meta
-  classes, the same setup as lxr) for 37 of 46 random lexers. Against
-  flex's default `-Cem`, which adds meta equivalence classes, lxr is smaller
-  for 28 of 46. It wins on the large lexers and loses slightly on small ones
-  like `c99.lex` and `json.lex`. lxr has no meta classes yet: it emits a
-  `lxr_meta[]` table but doesn't use it, so the table is not counted above.
+  Without meta classes, lxr tables are smaller than flex `-Ce`
+  (equivalence classes, no meta classes) for 37 of 46 random lexers. With
+  meta classes (`lxr -m`, see [above](#meta-equivalence-classes-smaller-tables)),
+  lxr is smaller than flex's default `-Cem` for 39 of 46 (28 of 46 without
+  `-m`), and for `c99.lex`. `json.lex` is still 9% bigger. The plot shows
+  lxr without `-m`.
 
   Sizes count every table in bytes, using the C element type in the
-  generated code: lxr `check next base accept def class`; flex `yy_accept
+  generated code: lxr `check next base accept def class` (and `meta` with
+  `-m`); flex `yy_accept
   yy_ec yy_meta yy_base yy_def yy_nxt yy_chk`. To reproduce, or try other
   seeds, flex modes or sizes, see [test/comparison](test/comparison/README.md):
 

@@ -12,4 +12,6 @@
 
   void lxr_debug ();
 
+  void lxr_meta_ecs ();       /* use meta equivalence classes ("-m") */
+
 #endif

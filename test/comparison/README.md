@@ -9,6 +9,7 @@ make                      # 40 random sets (5..40 rules) + languages/*/*.lex
 make N=200 SEED=7         # more / other random sets
 make MODES=-Ce,-Cem,-Cf   # flex table modes to compare against
 make NOCHECK=1            # skip the token stream check
+make META=1               # lxr with meta classes (lxr -m)
 make plot                 # docs/img/flex-comparison-{light,dark}.svg from out/results.csv
 make clean
 ```
@@ -21,13 +22,14 @@ options, e.g. `--lxr <binary>` to test another build.
 
 | | tables counted |
 |---|---|
-| lxr  | `check next base accept def class` (`lxr_meta` is emitted but unused, so it is **not** counted) |
+| lxr  | `check next base accept def class`, and `meta` (emitted only with `lxr -m`) |
 | flex | `yy_accept yy_ec yy_meta yy_base yy_def yy_nxt yy_chk` (whatever the mode emits) |
 
 * **bytes**: entries × size of the C element type in the generated code
 * **chk/nxt**: size of the compressed transition storage
-* flex `-Ce` (equivalence classes, no meta classes) is the fair comparison;
-  `-Cem` is flex's default.
+* lxr (default) against flex `-Ce` (equivalence classes, no meta classes),
+  and `lxr -m` against flex `-Cem` (flex's default, with meta classes) are
+  the fair comparisons.
 
 ## Scanning speed (`make bench`)
 
@@ -52,6 +54,7 @@ and hash of token ids and lengths); a difference is reported as MISMATCH.
 ```sh
 make bench                       # 32 MB inputs, 5 runs
 make bench SIZE=64 RUNS=7 IO=both
+make bench META=1                # also lxr -m (meta classes)
 ```
 
 Results go to `out/bench/bench.md` and `out/bench/bench.csv`.

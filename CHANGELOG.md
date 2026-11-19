@@ -1,5 +1,53 @@
 # Changelog
 
+## v2.2
+
+### Meta equivalence classes (optional)
+
+`%option meta-ecs` or `lxr -m` (as flex's `-Cm`) makes the tables
+smaller, at some cost in scanning speed. Off by default.
+
+- lxr adds *template* rows: a template sends a set of classes to one
+  state (e.g. all identifier characters to the identifier state). States
+  use a template (or a state that uses one) as their `def[]` fallback,
+  and store only the transitions that differ. Template rows are indexed
+  by *meta classes*: classes that no template tells apart share one.
+- The scanner follows `def[]` up to twice (state, state, template)
+  instead of once, and switches to `lxr_meta [class]` on reaching a
+  template (`#if lxr_meta_state` in `src/lxr/tokenize.c`).
+- Templates nobody uses are dropped, and lxr keeps the plain tables
+  when templates don't make them smaller, so `-m` never makes the
+  tables bigger.
+
+Table sizes, flex 2.6.4 for comparison:
+
+| Lexer | lxr | lxr `-m` | flex `-Cem` (default) |
+|---|---:|---:|---:|
+| `c99.lex` | 4544 B | **3816 B** | 4031 B |
+| `json.lex` | 1218 B | **1179 B** | 1084 B |
+| 46 random lexers, geomean vs flex `-Cem` | 0.84 | **0.74** | 1 |
+| lxr smaller than flex `-Cem` | 28 of 46 | **39 of 46** | |
+
+`lxr -m` is 11% smaller than lxr on average (geomean; up to 35%) over
+49 random lexers, and never bigger. The scanner is slower, from the
+second fallback (`make bench META=1`, 32 MB inputs):
+
+| Lexer | lxr `-m` time / lxr time | lxr `-m` time / flex `-Cem` time |
+|---|---:|---:|
+| `c99.lex` on C source | 1.13 | 1.03 |
+| `json.lex` on JSON | 1.07 | 1.28 |
+| 3 random lexers | 1.17 – 1.33 | 0.92 – 1.31 |
+
+Without the option, the tables are the same as in v2.1. The unused,
+all-zero `lxr_meta[]` table is no longer emitted, and there is a new
+`#define lxr_meta_state 0`.
+
+Also:
+
+- `test/comparison`: `make META=1` (`compare.py --lxr-flags=-m`) and
+  `make bench META=1` (`bench.py --meta`, adds an `lxr -m` scanner).
+  `compare.py` counts `lxr_meta[]` when it is emitted.
+
 ## v2.1
 
 Fixes in the generated scanner, a faster scanner loop, `%option yylineno`,

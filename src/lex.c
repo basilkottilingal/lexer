@@ -22,6 +22,7 @@ flex file.l*/
 #include "lexer.h"
 #include "regex.h"
 #include "class.h"
+#include "compression.h"
 
 #include "lxr/stringified.h"
 
@@ -398,6 +399,12 @@ static int macro_new (char * macro, char * pattern) {
 .. Options set by "%option" in the definitions section
 */
 static int opt_yylineno = 0;       /* track yylineno/yycolno (flex) */
+static int opt_meta = 0;      /* meta equivalence classes (templates) */
+
+/*
+.. Command line "-m" : same as "%option meta-ecs"
+*/
+void lxr_meta_ecs ( ) { opt_meta = 1; }
 
 /*
 .. flex options that don't change anything in lxr. Accepted silently.
@@ -442,6 +449,14 @@ static void lex_directive ( char * s ) {
     }
     if ( !strcmp (word, "noyylineno") ) {
       opt_yylineno = 0;
+      continue;
+    }
+    if ( !strcmp (word, "meta-ecs") ) {
+      opt_meta = 1;
+      continue;
+    }
+    if ( !strcmp (word, "nometa-ecs") ) {
+      opt_meta = 0;
       continue;
     }
     int known = 0;
@@ -977,6 +992,7 @@ static int lex_print_tables () {
   }
 
   int ** tables, * len;
+  rows_meta (opt_meta);
   if (dfa_tables (&tables, &len) < 0) {  /* comprssd tbles from DFA */
     error ("Table size Out of memory limit");
     return RGXOOM;
@@ -1021,6 +1037,15 @@ static int lex_print_tables () {
     "\n#define lxr_eof_class    %3d          /* end of file       */",
     nclass, class ['\n'], EOB_CLASS,
     dfa_eol_used () ? EOL_CLASS : 0, EOF_CLASS );
+  echo (buff);
+
+  sprintf ( buff,
+    "\n\n/*"
+    "\n.. Meta equivalence classes (%%option meta-ecs). States from"
+    "\n.. lxr_meta_state are templates, indexed by lxr_meta [class]."
+    "\n.. 0 : no meta classes."
+    "\n*/"
+    "\n#define lxr_meta_state   %3d", rows_meta_state () );
   echo (buff);
 
   sprintf ( buff, 

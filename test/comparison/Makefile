@@ -4,6 +4,7 @@
 #   make N=200 SEED=7          # more / other random sets
 #   make MODES=-Ce,-Cem,-Cf    # flex table modes to compare against
 #   make NOCHECK=1             # skip the token stream (same language) check
+#   make META=1                # lxr with meta classes (lxr -m)
 #   make plot                  # README plots from out/results.csv
 #   make bench                 # scanning speed, see bench.py
 #   make clean
@@ -25,6 +26,10 @@ ARGS = --lxr $(LXR) --flex $(FLEX) --n $(N) --seed $(SEED) \
 ifdef NOCHECK
   ARGS += --no-check
 endif
+ifdef META
+  ARGS += --lxr-flags=-m
+  BENCHARGS += --meta
+endif
 
 .PHONY: all compare plot bench lxr clean
 
@@ -32,12 +37,13 @@ all: compare
 
 # scanning speed : lxr vs flex (out/bench/bench.md)
 #   make bench SIZE=64 RUNS=7 IO=both
+#   make bench META=1          (also lxr -m)
 SIZE ?= 32
 RUNS ?= 5
 IO   ?= mem
 bench: lxr
 	$(PYTHON) bench.py --lxr $(LXR) --flex $(FLEX) --size $(SIZE) \
-	  --runs $(RUNS) --io $(IO) --seed $(SEED)
+	  --runs $(RUNS) --io $(IO) --seed $(SEED) $(BENCHARGS)
 
 # light & dark SVG plots for README.md (docs/img/flex-comparison-*.svg)
 plot:

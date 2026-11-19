@@ -234,7 +234,7 @@ def random_case(i, seed, size, work, lxr):
 
 # ------------------------------------------------------------- build
 
-def build(name, text, work, lxr, flex, modes, cc, cflags, incdirs):
+def build(name, text, work, lxr, flex, modes, cc, cflags, incdirs, meta=False):
     """Return { scanner : exe } ; scanners that fail to build are missing."""
     lfile = os.path.join(work, name + ".l")
     with open(lfile, "w") as f:
@@ -243,6 +243,9 @@ def build(name, text, work, lxr, flex, modes, cc, cflags, incdirs):
     exes, errors = {}, {}
     gens = [("lxr", [lxr, "-o", os.path.join(work, name + ".lxr.c"), lfile],
              os.path.join(work, name + ".lxr.c"))]
+    if meta:
+        c = os.path.join(work, name + ".lxr-m.c")
+        gens.append(("lxr -m", [lxr, "-m", "-o", c, lfile], c))
     for m in modes:
         c = os.path.join(work, "%s.flex%s.c" % (name, m.replace(" ", "")))
         gens.append(("flex " + m, [flex] + m.split() + ["-o", c, lfile], c))
@@ -293,6 +296,8 @@ def main():
     ap.add_argument("--modes", default="-Cem,-Ce,-8 -Cf",
                     help="flex table modes (a mode may hold several options, "
                          "e.g. '-8 -Cf'); the first is the baseline (flex default)")
+    ap.add_argument("--meta", action="store_true",
+                    help="also benchmark lxr -m (meta equivalence classes)")
     ap.add_argument("--size", type=int, default=32, help="input size in MB")
     ap.add_argument("--runs", type=int, default=5)
     ap.add_argument("--io", default="mem", choices=["mem", "file", "both"])
@@ -333,11 +338,12 @@ def main():
         cases.append((name, text, inp, desc, []))
 
     rows, problems = [], []
-    scanners = ["lxr"] + ["flex " + m for m in modes]
+    scanners = ["lxr"] + (["lxr -m"] if args.meta else []) + \
+        ["flex " + m for m in modes]
     base = "flex " + modes[0]
     for name, text, inp, desc, incs in cases:
         exes, errors = build(name, text, work, args.lxr, args.flex, modes,
-                             args.cc, args.cflags.split(), incs)
+                             args.cc, args.cflags.split(), incs, args.meta)
         for s, e in errors.items():
             problems.append("%s / %s : %s" % (name, s, e))
         if "lxr" not in exes:

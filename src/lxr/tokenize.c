@@ -6,13 +6,20 @@
 ..     state '1' is the starting dfa.
 ..     state '2' is the starting dfa (BOL)
 .. (b) There is no zero-length tokens,
-.. (c) maximum depth of 1 for "def" (fallback) chaining.
-.. (d) Doesn't use meta class.
+.. (c) maximum depth of 1 for "def" (fallback) chaining (2 with meta
+..     classes).
+.. (d) Meta classes are optional (lxr_meta_state != 0) : def[] may
+..     lead to a template state (>= lxr_meta_state), whose row is
+..     indexed by the meta class, lxr_meta [class].
 .. (e) Token value '0' : rejected. No substring matched
 .. (f) accept value in [1, ntokens] for accepted tokens
 */
 
+#if lxr_meta_state
+#define lxr_max_depth                        2  /* state, template */
+#else
 #define lxr_max_depth                        1
+#endif
 #define lxr_dead                             0
 #define lxr_not_rejected(s)                  (s)          /* s != 0 */
 
@@ -21,8 +28,23 @@
 .. Look for the transition in [base, base + nclass) using check/next
 .. tables; if it is not there, use the fallback (def). The transition
 .. is DEAD once the number of fallbacks reaches lxr_max_depth.
-.. (No meta class as of now.)
+.. With meta classes, a template's row is indexed by lxr_meta [c].
 */
+#if lxr_meta_state
+#define lxr_next_state(_s_, _c_)                                     \
+  do {                                                               \
+    int _depth_ = 0, _k_ = (_c_);                                    \
+    while ( lxr_not_rejected (_s_) &&                                \
+      ((int) lxr_check [lxr_base [_s_] + _k_] != (_s_)) ) {          \
+      (_s_) = (_depth_++ == lxr_max_depth) ? lxr_dead :              \
+        (int) lxr_def [_s_];                                         \
+      if ( (_s_) >= lxr_meta_state )                                 \
+        _k_ = (int) lxr_meta [_k_];                                  \
+    }                                                                \
+    if ( lxr_not_rejected (_s_) )                                    \
+      (_s_) = (int) lxr_next [lxr_base [_s_] + _k_];                 \
+  } while (0)
+#else
 #define lxr_next_state(_s_, _c_)                                     \
   do {                                                               \
     int _depth_ = 0;                                                 \
@@ -33,6 +55,7 @@
     if ( lxr_not_rejected (_s_) )                                    \
       (_s_) = (int) lxr_next [lxr_base [_s_] + (_c_)];               \
   } while (0)
+#endif
 
 /*
 .. The main lexer function. Returns 0, when EOF is encountered. So,

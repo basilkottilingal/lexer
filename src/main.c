@@ -8,6 +8,7 @@
 void usages ( char * pgm ) {
   const char * usage [] = {
     "-o output.c lexer.l",
+    "-m -o output.c lexer.l     (meta equivalence classes)",
     "-o output.c < lexer.l",
     "lexer.l",
     "< lexer.l"
@@ -31,6 +32,10 @@ int main (int argc, char ** argv) {
           exit (-1);
         }
         out = argv [i];
+        continue;
+      }
+      if (!strcmp (argv [i], "-m")) {
+        lxr_meta_ecs ();
         continue;
       }
       if (!strcmp (argv [i], "-d")) {

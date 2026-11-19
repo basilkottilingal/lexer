@@ -44,37 +44,64 @@ static int nstates;                             /* number of states */
 static int limit;                 /* allocated size of check & next */
 
 /*
-.. For a candidate state 'ps' which is already added to check[], see
-.. the number of exact transitions (c, δ (s,c)), not found in the
-.. candidate's
+.. Meta equivalence classes (optional, "%option meta-ecs" or "lxr -m").
+.. As in flex, a few "template" rows are added after the real states
+.. [1, m]. A template t has a single destination tdest[t] for a set of
+.. classes tset[t] (ex : all the identifier characters -> IDENT). Real
+.. states use a template as their def[] fallback, so they store only
+.. the transitions which differ from it. Meta classes refine the
+.. equivalence classes by the membership in every tset[t], so the
+.. template rows are stored with one entry per meta class :
+..   s >= lxr_meta_state (a template)  =>  c <- meta [c]
+*/
+static int use_meta = 0;
+static int ntmpl = 0;                         /* number of templates */
+static int tbase = 0;          /* state id of the first template (m+1) */
+static int nmeta = 0;                    /* number of meta classes */
+static int * tdest = NULL;               /* destination of template t */
+static unsigned char * tset = NULL;    /* tset [t*nclass + c] : c in t */
+static int * meta = NULL;                         /* class -> meta class */
+
+#define TMPL_MIN_CLASSES     4   /* min |tset| of a template           */
+#define TMPL_MIN_STATES      2   /* min states in a group (same dest.) */
+
+void rows_meta ( int on ) { use_meta = on; }
+int  rows_meta_state ( ) { return ntmpl ? tbase : 0; }
+int  rows_ntemplates ( ) { return ntmpl; }
+int  rows_nmeta ( ) { return nmeta; }
+
+static int maxdepth = MAXDEPTH;      /* MAXDEPTH + 1, with templates */
+
+/*
+.. Transition δ (s,c) as the generated scanner sees it : look in the
+.. row of s, then follow def[] at most 'hops' times. A template's row
+.. is indexed by the meta class. Returns EMPTY for DEAD.
+*/
+static inline
+int lookup ( int s, int c, int hops ) {
+  for (;;) {
+    int k = (ntmpl && s >= tbase) ? meta [c] : c;
+    if (check [base [s] + k] == s)
+      return next [base [s] + k];
+    if (hops-- <= 0 || (s = def [s]) == EMPTY)
+      return EMPTY;
+  }
+}
+
+/*
+.. For a candidate state 'ps' (a state already added to check[], or a
+.. template) as def[] of row r, the residual is the set of transitions
+.. (c, δ (s,c)) which differ from what the scanner finds through 'ps'
+.. (including DEAD transitions, stored as (c, EMPTY)).
 */
 static inline
 int row_candidate ( Row * r, int ps, Delta residual [] ) {
-  int n = 0, i = r->n, c = nclass-1, 
-    * chk = & check [base [ps]],
-    * nxt = & next [base [ps]];
+  int n = 0, i = 0;
   Delta * a = (Delta *) r->stack;
-  while ( i-- >= 0) {
-    int min = i >= 0 ? a[i].c : -1;
-    while (c > min) {
-      int _s = ps, depth = 1;
-
-      while (_s != EMPTY && check [base [_s]+c] != _s &&
-        /* This will work only if MAXDEPTH > 1*/
-        depth++ < MAXDEPTH ) 
-          _s = def [_s]; 
-
-      if ( _s != EMPTY && 
-        check [base [_s]+c] == _s &&
-        next [base [_s]+c] != EMPTY )
-          residual [n++] = (Delta) {c, EMPTY};
-
-      c--;
-    }
-    if (i < 0) break;
-    if ( chk [c] != ps || nxt [c] != a[i].delta )
-      residual [n++] = a [i];
-    c--;
+  for (int c = 0; c < nclass; ++c) {
+    int sv = (i < r->n && a[i].c == c) ? a[i++].delta : EMPTY;
+    if (sv != lookup (ps, c, maxdepth - 1))
+      residual [n++] = (Delta) {c, sv};
   }
   return n;                                    /* size of residual. */
 }
@@ -102,7 +129,7 @@ int find_slot ( Delta residual [], int nr ) {
 static
 int row_insert ( Row * r, int ps, Delta residual [] ) {
   Delta * res = (ps != EMPTY) ? residual : (Delta *) r->stack;
-  int s = r->s, nr = (ps != EMPTY) ? 
+  int s = r->s, nr = (ps != EMPTY) ?
     row_candidate (r, ps, residual) : r->n;
   if (!nr)
     return (base [s] = 0);
@@ -209,6 +236,150 @@ void row_print ( Row ** rows) {
 #endif
 
 /*
+.. Create the templates (and the meta classes) from the rows. For each
+.. state, its dominant destination d is the one reached by most of the
+.. classes. States with the same dominant destination form a group,
+.. and the template of the group has the classes that go to d in the
+.. majority of the group. A template is kept if it saves more entries
+.. than it costs.
+*/
+static int dom_cmp ( const void * a, const void * b ) {
+  const int * p = a, * q = b;
+  return (p[0] > q[0]) - (p[0] < q[0]);
+}
+
+/*
+.. Meta classes : refine the classes by the membership of each class
+.. in each template set.
+*/
+static void meta_create ( ) {
+  int n = nclass;
+  if (!meta) meta = allocate (n * sizeof (int));
+  memset (meta, 0, n * sizeof (int));
+  nmeta = ntmpl ? 1 : 0;
+  int * map = allocate (2 * n * sizeof (int));
+  for (int t = 0; t < ntmpl; ++t) {
+    for (int i = 0; i < 2 * nmeta; ++i) map [i] = EMPTY;
+    int nm = 0;
+    for (int c = 0; c < n; ++c) {
+      int key = 2 * meta [c] + tset [t * n + c];
+      if (map [key] == EMPTY) map [key] = nm++;
+      meta [c] = map [key];
+    }
+    nmeta = nm;
+  }
+  deallocate (map, 2 * n * sizeof (int));
+}
+
+static void templates_create ( Row ** rows, int m ) {
+  int n = nclass;
+  int * dom = allocate (2 * m * sizeof (int)),        /* (d, row) */
+      * cnt = allocate ((m + 2) * sizeof (int)),
+      * ccnt = allocate (n * sizeof (int));
+  int ng = 0, cap = 0;
+
+  ntmpl = 0, nmeta = 0, tbase = m + 1;
+
+  for (int k = 0; k < m; ++k) {
+    Row * r = rows [k];
+    Delta * a = (Delta *) r->stack;
+    int best = EMPTY, max = 0;
+    for (int i = 0; i < r->n; ++i)
+      if (++cnt [a[i].delta] > max) {
+        max = cnt [a[i].delta]; best = a[i].delta;
+      }
+    for (int i = 0; i < r->n; ++i)
+      cnt [a[i].delta] = 0;
+    if (max >= TMPL_MIN_CLASSES) {
+      dom [2*ng] = best; dom [2*ng+1] = k; ng++;
+    }
+  }
+  qsort (dom, ng, 2 * sizeof (int), dom_cmp);
+
+  for (int g = 0; g < ng; ) {
+    int d = dom [2*g], h = g;
+    while (h < ng && dom [2*h] == d) h++;
+    int size = h - g;
+    if (size >= TMPL_MIN_STATES) {
+      memset (ccnt, 0, n * sizeof (int));
+      for (int k = g; k < h; ++k) {
+        Row * r = rows [dom [2*k+1]];
+        Delta * a = (Delta *) r->stack;
+        for (int i = 0; i < r->n; ++i)
+          if (a[i].delta == d) ccnt [a[i].c]++;
+      }
+      int nset = 0;
+      for (int c = 0; c < n; ++c)
+        nset += (ccnt [c] = (2 * ccnt [c] > size));
+      if (nset >= TMPL_MIN_CLASSES) {
+        /* gain : entries saved by the states of the group */
+        int gain = 0;
+        for (int k = g; k < h; ++k) {
+          Row * r = rows [dom [2*k+1]];
+          Delta * a = (Delta *) r->stack;
+          int res = 0, i = 0;
+          for (int c = 0; c < n; ++c) {
+            int sv = (i < r->n && a[i].c == c) ? a[i++].delta : EMPTY;
+            res += (sv != (ccnt [c] ? d : EMPTY));
+          }
+          if (res < r->n) gain += r->n - res;
+        }
+        if (gain > nset) {
+          if (ntmpl == cap) {
+            int ncap = cap ? 2 * cap : 16;
+            tdest = reallocate (tdest, cap * sizeof (int),
+              ncap * sizeof (int));
+            tset = reallocate (tset, cap * n, ncap * n);
+            cap = ncap;
+          }
+          tdest [ntmpl] = d;
+          for (int c = 0; c < n; ++c)
+            tset [ntmpl * n + c] = (unsigned char) ccnt [c];
+          ntmpl++;
+        }
+      }
+    }
+    g = h;
+  }
+
+  meta_create ();
+
+  deallocate (ccnt, n * sizeof (int));
+  deallocate (cnt, (m + 2) * sizeof (int));
+  deallocate (dom, 2 * m * sizeof (int));
+}
+
+/*
+.. Insert the template rows (one entry per meta class) to check[] and
+.. next[]. Returns the largest base used, or RGXERR.
+*/
+static int resize (int k0);
+
+static int templates_insert ( int * def, int * accept, int k0 ) {
+  Delta row [256];
+  int offset = 0;
+  for (int t = 0; t < ntmpl; ++t) {
+    int nr = 0, s = tbase + t;
+    unsigned char seen [256] = {0};
+    for (int c = 0; c < nclass; ++c)
+      if (tset [t * nclass + c] && !seen [meta [c]]) {
+        seen [meta [c]] = 1;
+        row [nr++] = (Delta) { meta [c], tdest [t] };
+      }
+    int loc;
+    while ( (loc = find_slot (row, nr)) == EMPTY )
+      if (resize (k0)) return RGXOOM;
+    for (int i = 0; i < nr; ++i) {
+      check [loc + row [i].c] = s;
+      next [loc + row [i].c] = row [i].delta;
+    }
+    base [s] = loc;  def [s] = EMPTY;  accept [s] = 0;
+    if (loc > offset) offset = loc;
+  }
+  return offset;
+}
+
+/*
 .. It is a heauristic approach. We have some rows of some density and
 .. size and we have to place one row after the other, such that
 .. (a) when we insert a row, 'r', see if there is a suitable candidate
@@ -227,36 +398,36 @@ void row_print ( Row ** rows) {
 .. rows. Then other rows are inserted in the order of increasing cache
 .. size, and each time looking for a suitable parent row.
 */
-int rows_compression ( Row ** rows, int *** tables, 
-  int ** tsize, int m, int n )
-{
+/*
+.. One compression of the rows (in the sorted order) into check[] and
+.. next[], with the current templates (ntmpl may be 0). "rows" is
+.. modified (NULL terminated at a restart index). Returns the size of
+.. check[] (and next[]), or RGXOOM / RGXERR.
+*/
+static int compress_rows ( Row ** rows, int n, int * accept ) {
 
-  nstates = m, nclass = n;
   Delta residual [256];
-
-  /*
-  .. Sort the rows by increasing number of entries. Group rows with
-  .. same signature together. Signature is evaluated from the last and
-  .. first entry of cache.
-  */
-  qsort (rows, m, sizeof (Row*), compare);
-
   int k0 = 4 * n;   /* let's start with k=4n & reallocate if needed */
   k0 = 1 << (64 - __builtin_clzll ((unsigned long long)(k0 - 1)) );
-  limit = k0;
 
+  if (check) {                         /* from a previous compression */
+    deallocate (check, limit * sizeof (int));
+    deallocate (next, limit * sizeof (int));
+  }
+  limit = k0;
   check = allocate (limit* sizeof (int));
   next = allocate (limit * sizeof(int));
-  base = tables [0][2];
-  def  = tables [0][4];
-  int * accept = tables [0][3];
-  #if 0
-  int * meta   = tables [0][5];  /* We don't use meta class for now */
-  #endif
-
   memset ( check, EMPTY, limit * sizeof (int) );
 
   int offset = 0, startindex = 0;
+
+  /*
+  .. Templates (if any) are inserted first. Template states are
+  .. numbered [m+1, m+ntmpl].
+  */
+  if ( ntmpl && (offset = templates_insert (def, accept, k0)) < 0 )
+    return RGXOOM;
+
   for (int niter = 0; niter < 2; ++niter ) {
 
     if (startindex) {
@@ -269,8 +440,6 @@ int rows_compression ( Row ** rows, int *** tables,
 
       if (offset + 2*n > limit)   /* resize next[], check[] if reqd */
         if (resize (k0)) {
-          error ("Table compression: Out of table size limit %d",
-            TABLE_LIMIT);
           return RGXOOM;
         }
 
@@ -290,6 +459,22 @@ int rows_compression ( Row ** rows, int *** tables,
           if (nres < min) { min = nres; best = queue [iq]; }
         }
         jrow --;
+      }
+
+      /*
+      .. A template is a candidate for def[], if its destination is
+      .. one of this row's destinations.
+      */
+      if (ntmpl) {
+        Delta * a = (Delta *) r->stack;
+        for (int t = 0; t < ntmpl; ++t) {
+          int d = tdest [t], found = 0;
+          for (int i = 0; i < r->n && !found; ++i)
+            found = (a[i].delta == d);
+          if (!found) continue;
+          int nres = row_candidate ( r, tbase + t, residual );
+          if (nres < min) { min = nres; best = tbase + t; }
+        }
       }
 
       if ( best != EMPTY &&
@@ -320,6 +505,10 @@ int rows_compression ( Row ** rows, int *** tables,
           startindex = irow;
           memset (check, EMPTY, (offset + n) * sizeof (int)); 
           memset (next, 0, (offset + n) * sizeof (int));
+          if (ntmpl) {          /* templates are inserted first again */
+            int to = templates_insert (def, accept, k0);
+            if (to < 0) return RGXOOM;
+          }
         }
         #endif
       }
@@ -342,10 +531,125 @@ int rows_compression ( Row ** rows, int *** tables,
       break;
   }
 
+  return offset + n;
+}
+
+/*
+.. Templates that no state uses as def[] are removed (and the meta
+.. classes are recomputed, so they may get coarser). Returns the
+.. number of templates removed. (A template with a single user is
+.. kept : with def[] chains, that user may be the def[] of many.)
+*/
+static int templates_prune ( int m ) {
+  int * users = allocate ((ntmpl + 1) * sizeof (int)), k = 0;
+  for (int s = 1; s <= m; ++s)
+    if (def [s] != EMPTY && def [s] >= tbase)
+      users [def [s] - tbase]++;
+  for (int t = 0; t < ntmpl; ++t)
+    if (users [t]) {
+      if (k != t) {
+        tdest [k] = tdest [t];
+        memcpy (& tset [k * nclass], & tset [t * nclass], nclass);
+      }
+      k++;
+    }
+  deallocate (users, (ntmpl + 1) * sizeof (int));
+  int removed = ntmpl - k;
+  ntmpl = k;
+  if (removed) meta_create ();
+  return removed;
+}
+
+int rows_compression ( Row ** rows, int *** tables, 
+  int ** tsize, int m, int n )
+{
+
+  nstates = m, nclass = n;
+
+  /*
+  .. Sort the rows by increasing number of entries. Group rows with
+  .. same signature together. Signature is evaluated from the last and
+  .. first entry of cache.
+  */
+  qsort (rows, m, sizeof (Row*), compare);
+
+  base = tables [0][2];
+  def  = tables [0][4];
+  int * accept = tables [0][3];
+
+  /*
+  .. compress_rows () modifies the list of rows, so each compression
+  .. works on a copy.
+  */
+  Row ** work = allocate ((m + 1) * sizeof (Row *));
+  #define COMPRESS(_size_)                                           \
+    do {                                                             \
+      memcpy (work, rows, m * sizeof (Row *));  work [m] = NULL;     \
+      maxdepth = ntmpl ? MAXDEPTH + 1 : MAXDEPTH;                    \
+      (_size_) = compress_rows (work, n, accept);                    \
+    } while (0)
+
+  /*
+  .. Optional : templates & meta classes. base[], def[], accept[] are
+  .. extended for the template states [m+1, m+ntmpl]. Templates that
+  .. are rarely used are removed, and finally templates are kept only
+  .. if the tables (in bytes) are smaller than without templates.
+  */
+  int size = 0, ntmpl0;
+  ntmpl = 0;
+  if (use_meta) {
+    templates_create (rows, m);
+    if (ntmpl) {
+      size_t o = (m+1) * sizeof (int), z = (m+1+ntmpl) * sizeof (int);
+      base   = tables [0][2] = reallocate (base, o, z);
+      accept = tables [0][3] = reallocate (accept, o, z);
+      def    = tables [0][4] = reallocate (def, o, z);
+    }
+    int iter = 0;
+    while (ntmpl) {
+      COMPRESS (size);
+      if (size < 0 || ++iter == 4 || !templates_prune (m))
+        break;
+    }
+    if (!ntmpl) size = 0;            /* all pruned : compress again */
+    if (ntmpl && size > 0) {
+      int bytes = 4 * size + 6 * (m + 1 + ntmpl) + n, size0;
+      ntmpl0 = ntmpl;  ntmpl = 0;
+      COMPRESS (size0);
+      if (size0 < 0 || bytes < 4 * size0 + 6 * (m + 1)) {
+        ntmpl = ntmpl0;
+        COMPRESS (size);
+      }
+      else
+        size = size0;
+    }
+    else if (ntmpl) {          /* failed with templates : try without */
+      ntmpl = 0;
+      COMPRESS (size);
+    }
+  }
+  if (!ntmpl && !size)
+    COMPRESS (size);
+  #undef COMPRESS
+
+  deallocate (work, (m + 1) * sizeof (Row *));
+  if (size < 0) {
+    if (size == RGXOOM)
+      error ("Table compression: Out of table size limit %d",
+        TABLE_LIMIT);
+    else
+      error ("table compression : internal error");
+    return size;
+  }
+
+  if (ntmpl) {
+    tsize [0][2] = tsize [0][3] = tsize [0][4] = m + 1 + ntmpl;
+    tables [0][5] = meta;  tsize [0][5] = nclass;
+  }
 
   deallocate (rows, (m+1)*sizeof (Row*));
 
-  tsize [0][0] = tsize [0][1] = offset + n;
+  tsize [0][0] = tsize [0][1] = size;
   tables [0][0] = check;  tables[0][1] = next;
 
   for (int i=0; i<tsize [0][0]; ++i) {
