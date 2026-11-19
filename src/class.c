@@ -41,7 +41,8 @@
 .. head and next are used to maintain a linked list of characters in
 .. an equivalence class. END is used to mark the end of the list.
 */
-static int next [ALPH], head [ALPH];
+static int next [ALPH], head [ALPH + 1]; /* head [nclass] is written
+                                      .. even when nclass == ALPH */
 
 /*
 .. class is the mapping C(c) from [0,256) -> [0, nclass) where nclass

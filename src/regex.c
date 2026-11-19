@@ -174,7 +174,16 @@ int rgx_token ( char ** str ) {
       int *r = &token[1], nread = 0; r[0] = 0, r[1] = INT_MAX;
       for (int i=0; i<2; ++i) {
         int ndigits = 0, val = 0;
-        while ( (INPUT()) != EOF ) {
+        for (;;) {
+          INPUT();
+          /*
+          .. An unterminated '{' : stop here, rather than reading
+          .. past the end of the string
+          */
+          if ( c == EOF ) {
+            error ("rgx : unterminated quantifier {");
+            RTN (RGXERR);
+          }
           if ( c == '}' ) {
             if (ndigits) { ++nread; r[i] = r[1] = val; }
             i=2; break;
@@ -186,6 +195,15 @@ int rgx_token ( char ** str ) {
           }
           ERR ( c<'0' || c>'9' );
           ++ndigits, val = val*10 + (c-'0');
+          /*
+          .. Repetition counts are stored in the rpn stack along with
+          .. literals [0, 0xFF]. Also x{m,n} is expanded to m+n copies
+          .. of x, so large counts are not practical anyway.
+          */
+          if ( val > RGXMAXREP ) {
+            error ("rgx : repetition count > %d not allowed", RGXMAXREP);
+            RTN (RGXERR);
+          }
         }
       }
       /*
@@ -246,27 +264,27 @@ int rgx_rpn ( char * s, int * rpn ) {
     return ( stack.n == stack.max ?                                  \
        (stack.a[stack.n-1] = RGXOOM) : (stack.a[stack.n++] = RGXERR) )
 
-  char buffer [RGXSIZE + 4], * bf = buffer;
-  int len = strlen (s), additional = 0;
+  /* "^?(" + rgx + ")" + '\0' needs len + 5 bytes */
+  char buffer [RGXSIZE + 8], * bf = buffer;
+  int len = strlen (s), prefix = 0;
   if (len > RGXSIZE) return RGXOOM;
   if (s[0] != '^')
   {
-    /* 
+    /*
     .. === addition optional BOL before patter ===
     .. If the rgx doesn't have a BOL anchor requirement, like in ^abc,
     .. we add BOL as optional. Example for pattern abc, we modify it
-    .. as ^?(abc)
+    .. as ^?(abc). The parenthesis are always needed, even if the
+    .. pattern starts with '(' : (a)|b has to be ^?((a)|b) and not
+    .. ^?(a)|b
     */
-    buffer [additional++] = '^';
-    buffer [additional++] = '?';
-    if (s [0] != '(')
-      buffer [additional++] = '(';
-    memcpy ( &buffer [additional], s, len);
-    additional += len;
-    if (s [0] != '(')
-      buffer [additional++] = ')';
-    buffer [additional] = '\0';
-    additional -= len;
+    buffer [0] = '^';
+    buffer [1] = '?';
+    buffer [2] = '(';
+    prefix = 3;
+    memcpy ( &buffer [prefix], s, len);
+    buffer [prefix + len]     = ')';
+    buffer [prefix + len + 1] = '\0';
   }
   char ** rgx = (s[0] != '^') ? &bf : &s, * const start = *rgx;
   int queued[4],
@@ -279,6 +297,7 @@ int rgx_rpn ( char * s, int * rpn ) {
 
   token [0] = 0;                    /* Signify last token was empty */
   is_EOL = 0;
+  charclass = 0;    /* an unclosed [ of a previous rgx shouldn't leak */
 
   while ((op = queue.n ? queue.a[--queue.n] : rgx_token (rgx)) >= 0) {
     if ( ISRGXOP (op) ) {
@@ -377,7 +396,7 @@ int rgx_rpn ( char * s, int * rpn ) {
           break;
 
         default :
-          error ("rgx rpn : unknown operator %c", (char) c);
+          error ("rgx rpn : unknown operator %c", (char) (op & 0xFF));
           ERR (1);
       }
     }
@@ -393,6 +412,12 @@ int rgx_rpn ( char * s, int * rpn ) {
       }
       OPERAND (op);
     }
+  }
+
+  if ( op == RGXEOE && charclass ) {
+    charclass = 0;
+    error ("rgx rpn : unterminated character class [");
+    ERR (1);
   }
 
   if ( op == RGXEOE ) {
@@ -423,7 +448,8 @@ int rgx_rpn ( char * s, int * rpn ) {
     .. characters found in the regex
     */
     PUSH (stack, RGXEOE);
-    return (int) (*rgx - start) - 1 - additional;
+    int consumed = (int) (*rgx - start) - 1 - prefix;
+    return consumed < len ? consumed : len;
   }
 
   /*

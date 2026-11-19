@@ -297,14 +297,16 @@ static int macro_new (char * macro, char * pattern) {
   rgx [len] = '\0';
   int rpn [RGXSIZE];
   int rpnlen = rgx_rpn (rgx, rpn);       /* return rgx length if succesful */
-  rgx [rpnlen] = '\0'; 
+  if (rpnlen <= 0) {
+    /* rpnlen may be negative (error flag). Don't use it as an index */
+    error ("cannot create rpn for regex %s in line %d", rgx, line);
+    return RGXERR;
+  }
+  rgx [rpnlen] = '\0';
+  len = (size_t) rpnlen;
   if (isdebug)
   {
     printf ("\nmaking regex for `%s` [rpn len %d]", rgx, rpnlen);
-  }
-  if (rpnlen <= 0) {
-    error ("cannot create rpn for regex %s in line %d", rgx, line);
-    return RGXERR;
   }
 
   /*
@@ -379,7 +381,8 @@ int lex_read_definitions () {
         if (c == '\n')
           break;
         if (comment) {
-          if (c == '*' && *ptr++ == '/') comment = 0;
+          /* don't consume the char after '*', unless it's '/'. (**\/) */
+          if (c == '*' && *ptr == '/') { ++ptr; comment = 0; }
           continue;
         }
         if ( c == '/' && *ptr == '*' ) {
@@ -473,11 +476,16 @@ int _pattern (char * rgx, size_t lim) {
 
   while ( (c = fgetc(in)) != EOF ) {
 
-    rgx[len++] = (char) c;
-    if (len == lim - 2) {
+    /*
+    .. Each iteration appends at most 2 bytes (an escaped char inside
+    .. quotes, or '{' followed by a digit). Leave room for those and
+    .. for the terminating '\0'
+    */
+    if (len + 3 > lim) {
       error ( "rgx buff limit" );
       return RGXOOM;
     }
+    rgx[len++] = (char) c;
     if (escape) {
       escape = 0;
       continue;
@@ -498,6 +506,18 @@ int _pattern (char * rgx, size_t lim) {
         case '-' : case '.' : case '\\' :
           rgx [len-1] = '\\';
           rgx [len++] = c;
+          break;
+        case ' ' :
+          /*
+          .. space ends a regex in rgx_rpn (), so escape it. Similarly
+          .. tab, which is not a printable character, is written as \t
+          */
+          rgx [len-1] = '\\';
+          rgx [len++] = ' ';
+          break;
+        case '\t' :
+          rgx [len-1] = '\\';
+          rgx [len++] = 't';
           break;
         default :
       }
@@ -597,7 +617,7 @@ int _pattern (char * rgx, size_t lim) {
           return RGXERR;
         }
         int l = strlen (m->rgx);
-        if (l + len >= lim) {
+        if (l + len + 3 > lim) {
           error ("rgx buffer out of memory"); 
           return RGXOOM;
         }
@@ -786,7 +806,7 @@ int lex_read_rules ( ) {
     status = _pattern (rgx, sizeof (rgx));
     if ( status == EOF ) break;
     if ( status == EMPTY ) continue;
-    if ( status == RGXERR ) {
+    if ( status < EOF ) {                    /* RGXERR or RGXOOM */
       error ("failed reading rule-action near line %d", line);
       return RGXERR;
     }
@@ -799,7 +819,7 @@ int lex_read_rules ( ) {
 
     /* Read the action for the above regex pattern */
     status = _action (action, sizeof (action));
-    if ( status == RGXERR ) {
+    if ( status < 0 ) {
       error ("failed reading rule-action near line %d", line);
       return RGXERR;
     }
